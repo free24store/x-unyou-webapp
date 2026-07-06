@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}投稿カレンダー{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">📅 投稿カレンダー</h4>
+</div>
+
+<div class="alert alert-warning d-flex gap-2 align-items-start mb-3 small">
+  <span>💡 Point:</span>
+  <span>「毎日同じリズムで投稿する」ことがフォロワーに覚えてもらう一番の近道です。まず1週間分を作って、投稿文を生成しましょう。</span>
+</div>
+
+<div class="accordion mb-3" id="calGuide">
+  <div class="accordion-item border-info">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed small py-2 text-info" type="button" data-bs-toggle="collapse" data-bs-target="#calGuideBody">
+        投稿スロットの種類と使い方
+      </button>
+    </h2>
+    <div id="calGuideBody" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <strong>週番号の使い方</strong>
+            <ul class="mb-0 mt-1">
+              <li>Week 1〜4 は月の1〜4週目に対応します</li>
+              <li>成長ステージが変わったら「アカウント設定」でステージを更新してから再生成しましょう</li>
+              <li>生成した履歴は下に残り、後から振り返れます</li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <strong>投稿スロットの種類</strong>
+            <ul class="mb-0 mt-1">
+              <li><strong>続きが気になる</strong>: 一行目で「え、なんで？」と思わせる投稿。クリック数UP</li>
+              <li><strong>ストーリー</strong>: 起承転結で感情を動かす。読まれる時間UP</li>
+              <li><strong>比較</strong>: 「〇〇 vs △△」形式。保存・シェアに強い</li>
+              <li><strong>ノウハウ</strong>: 具体的な手順・方法（伸び期以降推奨）</li>
+              <li><strong>言い訳を潰す</strong>: 「でも〜は無理」という読者の不安を先回りして消す</li>
+            </ul>
+          </div>
+        </div>
+        <div class="mt-2">
+          <strong>💡 Point:</strong> カレンダーを生成したら、次は「投稿文を作る」でテキストを自動生成しましょう！
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4" style="max-width: 400px;">
+  <div class="card-body">
+    <form method="post" class="d-flex gap-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="form-label mb-1">週番号（1〜4）</label>
+        <input type="number" name="week_no" class="form-control" value="1" min="1" max="52" style="width:100px">
+      </div>
+      <button type="submit" class="btn btn-primary">カレンダーを作成</button>
+    </form>
+  </div>
+</div>
+
+{% for entry in entries %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between">
+    <span>Week {{ entry.week_no }} —
+      {% if entry.phase_at_generation == 'player' %}始めたて期
+      {% elif entry.phase_at_generation == 'early' %}伸び期
+      {% else %}{{ entry.phase_at_generation }}{% endif %}
+    </span>
+    <small class="text-muted">{{ entry.generated_at.strftime('%Y-%m-%d %H:%M') }} 生成</small>
+  </div>
+  <div class="card-body p-0">
+    {% for day in entry.content_json %}
+    <div class="border-bottom px-3 py-2">
+      <strong>{{ day.date }} ({{ day.weekday }})</strong>
+      <ul class="mb-0 mt-1 small">
+        {% for slot in day.slots %}
+        <li>投稿{{ slot.post_no }}: 「{{ slot.type }}」 / テーマ: {{ slot.education_name }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+  カレンダーがまだ作成されていません。上のボタンで最初の1週間分を作ってみましょう！
+</div>
+{% endfor %}
+{% endblock %}

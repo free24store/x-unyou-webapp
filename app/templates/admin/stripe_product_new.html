@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Stripe決済リンク作成 — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">💳 Stripe決済リンクを作成する</h2>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 商品名と価格を入力するだけでStripeのPayment Linkを自動発行します。事前に <code>STRIPE_SECRET_KEY</code> を .env に設定してください。
+</div>
+
+<div class="card" style="max-width:480px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">商品名 <span class="text-danger">*</span></label>
+        <input type="text" name="product_name" class="form-control"
+               placeholder="例：X運用3ヶ月完全サポートプログラム" required>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">価格（円・税込）<span class="text-danger">*</span></label>
+        <div class="input-group">
+          <span class="input-group-text">¥</span>
+          <input type="number" name="price_jpy" class="form-control"
+                 placeholder="49800" min="1" required>
+        </div>
+        <div class="form-text">Stripeは日本円（JPY）で設定されます</div>
+      </div>
+
+      <button type="submit" class="btn btn-success w-100">
+        💳 決済リンクを作成する
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="mt-4 text-muted small">
+  <strong>STRIPE_SECRET_KEY 未設定の場合：</strong>商品情報のみDBに保存されます（Stripe連携なし）。<br>
+  <code>.env</code> に <code>STRIPE_SECRET_KEY=sk_live_...</code> を追加してサーバーを再起動してください。
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+# 環境変数・シークレット
+.env
+*.env
+
+# SQLite DB（本番DBはRenderのDisk or PostgreSQLを使う）
+instance/
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# キャッシュ
+instance/videos/
+instance/images/
+*.log
+nohup.out

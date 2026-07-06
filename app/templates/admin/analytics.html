@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}ホーム{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h4 class="mb-4">🏠 ホーム</h4>
+
+{# ─── セットアップチェックリスト ─── #}
+{% if not setup_done %}
+<div class="card border-primary mb-4">
+  <div class="card-header bg-primary text-white fw-bold">
+    🚀 はじめての設定チェックリスト
+    <span class="badge bg-light text-primary ms-2">{{ setup_steps.values()|selectattr('self')|list|length }}/5 完了</span>
+  </div>
+  <div class="card-body p-0">
+
+    {# STEP 1 #}
+    <div class="d-flex align-items-start p-3 border-bottom {% if setup_steps.profile %}bg-success bg-opacity-10{% endif %}">
+      <div class="me-3 fs-4">{% if setup_steps.profile %}✅{% else %}⬜{% endif %}</div>
+      <div class="flex-grow-1">
+        <div class="fw-bold">STEP 1 — 自分のことを入力する</div>
+        <div class="small text-muted">ターゲット・ゴール・強みを設定すると、投稿文が自動生成されるようになります</div>
+        <div class="alert alert-warning p-2 mt-2 small mb-0">
+          💡 Point: 「誰のために」「何を伝えるか」が明確だとフォロワーが10倍増えやすくなります
+        </div>
+      </div>
+      {% if not setup_steps.profile %}
+      <a href="{{ url_for('admin.profile') }}" class="btn btn-primary btn-sm ms-3 flex-shrink-0">設定する →</a>
+      {% endif %}
+    </div>
+
+    {# STEP 2 #}
+    <div class="d-flex align-items-start p-3 border-bottom {% if setup_steps.calendar %}bg-success bg-opacity-10{% elif not setup_steps.profile %}opacity-50{% endif %}">
+      <div class="me-3 fs-4">{% if setup_steps.calendar %}✅{% else %}⬜{% endif %}</div>
+      <div class="flex-grow-1">
+        <div class="fw-bold">STEP 2 — 1週間の投稿スケジュールを作る</div>
+        <div class="small text-muted">「何曜日に何を投稿するか」のカレンダーを自動生成します</div>
+        <div class="alert alert-warning p-2 mt-2 small mb-0">
+          💡 Point: 毎週同じリズムで投稿することが、フォロワーに覚えてもらう一番の近道です
+        </div>
+      </div>
+      {% if setup_steps.profile and not setup_steps.calendar %}
+      <a href="{{ url_for('admin.calendar') }}" class="btn btn-primary btn-sm ms-3 flex-shrink-0">作成する →</a>
+      {% endif %}
+    </div>
+
+    {# STEP 3 #}
+    <div class="d-flex align-items-start p-3 border-bottom {% if setup_steps.drafts %}bg-success bg-opacity-10{% elif not setup_steps.calendar %}opacity-50{% endif %}">
+      <div class="me-3 fs-4">{% if setup_steps.drafts %}✅{% else %}⬜{% endif %}</div>
+      <div class="flex-grow-1">
+        <div class="fw-bold">STEP 3 — 最初の投稿文を生成する</div>
+        <div class="small text-muted">あなたのプロフィールとカレンダーに合わせた投稿文を自動で作ります</div>
+        <div class="alert alert-warning p-2 mt-2 small mb-0">
+          💡 Point: 生成した文章はそのまま使わず、自分の言葉に少し直すと「らしさ」が出ます
+        </div>
+      </div>
+      {% if setup_steps.calendar and not setup_steps.drafts %}
+      <a href="{{ url_for('admin.drafts') }}" class="btn btn-primary btn-sm ms-3 flex-shrink-0">生成する →</a>
+      {% endif %}
+    </div>
+
+    {# STEP 4 #}
+    <div class="d-flex align-items-start p-3 border-bottom {% if setup_steps.sns %}bg-success bg-opacity-10{% elif not setup_steps.drafts %}opacity-50{% endif %}">
+      <div class="me-3 fs-4">{% if setup_steps.sns %}✅{% else %}⬜{% endif %}</div>
+      <div class="flex-grow-1">
+        <div class="fw-bold">STEP 4 — X（旧Twitter）と連携する</div>
+        <div class="small text-muted">X のAPIキーを登録すると、投稿文のコピーや管理がしやすくなります</div>
+        <div class="alert alert-warning p-2 mt-2 small mb-0">
+          💡 Point: APIキーはX Developer Portalから無料で取得できます。設定方法ガイドを参照してください
+        </div>
+      </div>
+      {% if setup_steps.drafts and not setup_steps.sns %}
+      <a href="{{ url_for('sns.settings') }}" class="btn btn-primary btn-sm ms-3 flex-shrink-0">連携する →</a>
+      {% endif %}
+    </div>
+
+    {# STEP 5 #}
+    <div class="d-flex align-items-start p-3 {% if setup_steps.scheduled %}bg-success bg-opacity-10{% elif not setup_steps.sns %}opacity-50{% endif %}">
+      <div class="me-3 fs-4">{% if setup_steps.scheduled %}✅{% else %}⬜{% endif %}</div>
+      <div class="flex-grow-1">
+        <div class="fw-bold">STEP 5 — 最初の投稿をスケジュールする</div>
+        <div class="small text-muted">投稿したい日時を登録しておくと、時間になったらアプリが通知してくれます</div>
+        <div class="alert alert-warning p-2 mt-2 small mb-0">
+          💡 Point: まず1件だけ予約してみましょう。投稿できたら「投稿済みにする」ボタンを押して記録！
+        </div>
+      </div>
+      {% if setup_steps.sns and not setup_steps.scheduled %}
+      <a href="{{ url_for('sns.schedule_list') }}" class="btn btn-primary btn-sm ms-3 flex-shrink-0">スケジュールする →</a>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% else %}
+<div class="alert alert-success d-flex align-items-center gap-2 mb-4">
+  🎉 <strong>初期設定が完了しています！</strong> あとは毎日投稿するだけです。
+</div>
+{% endif %}
+
+{# ─── 今日の投稿 ─── #}
+{% if today_posts %}
+<div class="card border-warning mb-4">
+  <div class="card-header bg-warning text-dark fw-bold">
+    📤 今日投稿する内容（{{ today_posts|length }}件）
+  </div>
+  {% for post in today_posts %}
+  <div id="hometext-{{ post.id }}" style="display:none">{{ post.text }}</div>
+  <div class="card-body border-bottom">
+    <div class="small text-muted mb-2">🕐 {{ post.scheduled_at.strftime('%H:%M') }} 予定</div>
+    <p class="mb-2" style="white-space:pre-wrap; font-size:0.95rem;">{{ post.text[:120] }}{% if post.text|length > 120 %}…{% endif %}</p>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-dark" onclick="homeCopy({{ post.id }})">📋 テキストをコピー</button>
+      <a href="https://x.com/intent/tweet" target="_blank" class="btn btn-sm btn-outline-dark">X を開く</a>
+      <form method="post" action="{{ url_for('sns.mark_posted', post_id=post.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-success">✓ 投稿済みにする</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="card-footer small text-muted">
+    💡 Point: コピー → X に貼り付けて投稿 → 「投稿済みにする」の順で進めてください
+  </div>
+</div>
+{% elif setup_done %}
+<div class="alert alert-info mb-4">
+  📅 今日の予定投稿はありません。<a href="{{ url_for('sns.schedule_list') }}">投稿スケジュールを確認する</a>
+</div>
+{% endif %}
+
+{# ─── 運用状況（フェーズ・診断）─── #}
+<div class="accordion mb-3" id="guideAccordion">
+  <div class="accordion-item border-info">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed small py-2 text-info" type="button" data-bs-toggle="collapse" data-bs-target="#analyticsGuide">
+        📊 運用状況の見方（フェーズ・ゲージ・ファネル診断）
+      </button>
+    </h2>
+    <div id="analyticsGuide" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <strong>成長ステージ</strong>
+            <ul class="mb-0 mt-1">
+              <li><strong>始めたて期</strong>: 平均表示回数1000未満。まず投稿習慣をつける段階。</li>
+              <li><strong>伸び期</strong>: 表示回数2000以上。反応が増え、LINE登録誘導が機能し始める。</li>
+              <li><strong>収益化期</strong>: 3指標すべて目標到達。商品・サービスの販売が軌道に乗る段階。</li>
+            </ul>
+          </div>
+          <div class="col-md-4">
+            <strong>収益化ゲージ（3つ同時達成が目標）</strong>
+            <ul class="mb-0 mt-1">
+              <li>平均表示回数: 750以上</li>
+              <li>フォロワー増加（月換算）: 400人以上</li>
+              <li>エンゲージメント率: 5%以上</li>
+            </ul>
+          </div>
+          <div class="col-md-4">
+            <strong>投稿の流れ（上から順番に改善）</strong>
+            <ol class="mb-0 mt-1">
+              <li>投稿数 → 表示回数</li>
+              <li>表示回数 → いいね・保存</li>
+              <li>いいね → フォロワー増加</li>
+              <li>フォロワー → LINE登録</li>
+              <li>LINE → 相談・面談</li>
+              <li>面談 → 購入</li>
+            </ol>
+            <p class="text-muted mt-1 mb-0">⚠ が出ている行が「詰まっている場所」です</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% set show_note_form = false %}
+{% include "partials/_analytics.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function homeCopy(postId) {
+  const el = document.getElementById('hometext-' + postId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✅ コピーしました';
+    btn.classList.replace('btn-dark', 'btn-success');
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.classList.replace('btn-success', 'btn-dark');
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

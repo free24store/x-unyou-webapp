@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}ストーリーキャンペーン — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">📖 ストーリーキャンペーン</h2>
+  <a href="{{ url_for('admin.story_campaign_new') }}" class="btn btn-primary">➕ 新しいキャンペーン</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 期間を設定すると「認知期 → 信頼構築期 → オファー期」の3段階ストーリーに沿って、毎日の投稿文をAIが自動生成。予約投稿に一括登録されます。
+</div>
+
+{% if campaigns %}
+<div class="row g-3">
+  {% for c in campaigns %}
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">{{ c.title }}</h5>
+        <div class="small text-muted mb-2">
+          📅 {{ c.start_date.strftime('%Y/%m/%d') }} 〜 {{ c.end_date.strftime('%Y/%m/%d') }}
+          （{{ (c.end_date - c.start_date).days + 1 }}日間）<br>
+          📤 1日{{ c.posts_per_day }}投稿 × {{ (c.end_date - c.start_date).days + 1 }}日 = 計{{ c.total_posts }}件
+          {% if c.product_name %} | 商品：{{ c.product_name }}{% endif %}
+        </div>
+        <span class="badge {{ 'bg-success' if c.status == 'done' else 'bg-warning text-dark' }}">
+          {{ '生成完了' if c.status == 'done' else c.status }}
+        </span>
+      </div>
+      <div class="card-footer d-flex gap-2">
+        <a href="{{ url_for('admin.story_campaign_detail', campaign_id=c.id) }}" class="btn btn-sm btn-outline-primary">📋 投稿一覧</a>
+        <form method="POST" action="{{ url_for('admin.story_campaign_delete', campaign_id=c.id) }}"
+              onsubmit="return confirm('キャンペーンと関連する予約投稿をすべて削除しますか？')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <p class="fs-5">まだキャンペーンがありません。</p>
+  <a href="{{ url_for('admin.story_campaign_new') }}" class="btn btn-primary">最初のキャンペーンを作成する</a>
+</div>
+{% endif %}
+{% endblock %}

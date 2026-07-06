@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}LINEステップ生成 — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">📱 LINEステップ配信を生成する</h2>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 7日間・6通のステップ配信メッセージをAIが自動生成します。登録直後〜セールスレター案内まで、見込み客の心理に沿ったシナリオです。
+</div>
+
+<div class="card" style="max-width:600px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">管理用タイトル</label>
+        <input type="text" name="title" class="form-control" placeholder="例：7日間X運用ステップ">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">案内する商品・サービス名</label>
+        <input type="text" name="product_name" class="form-control"
+               placeholder="例：X運用3ヶ月完全サポートプログラム">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">セールスレターURL（7日目に案内）</label>
+        {% if letters %}
+        <select name="sl_url" class="form-select">
+          <option value="">── 選択してください ──</option>
+          {% for l in letters %}
+          <option value="{{ BASE_URL }}/sl/{{ l.client_id }}">{{ l.title }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input type="url" name="sl_url" class="form-control" placeholder="https://...">
+        <div class="form-text">
+          <a href="{{ url_for('admin.sl_new') }}">先にセールスレターを生成する →</a>
+        </div>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100">
+        ✨ AIでLINEステップを生成する（30〜60秒）
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

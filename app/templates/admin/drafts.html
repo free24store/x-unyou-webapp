@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}投稿文を作る{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">📝 投稿文を作る</h4>
+</div>
+
+<div class="alert alert-warning d-flex gap-2 align-items-start mb-3 small">
+  <span>💡 Point:</span>
+  <span>生成した文章は「ドラフト（下書き）」です。そのままコピーせず、自分の言葉に少し直してから投稿しましょう。「らしさ」が伝わると反応が上がります。</span>
+</div>
+
+<div class="accordion mb-3" id="draftGuide">
+  <div class="accordion-item border-info">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed small py-2 text-info" type="button" data-bs-toggle="collapse" data-bs-target="#draftGuideBody">
+        3種類の投稿文タイプの違い
+      </button>
+    </h2>
+    <div id="draftGuideBody" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <strong>通常の投稿文</strong>
+            <p class="mb-1 mt-1">カレンダーのテーマに合わせた投稿文を自動生成。「続きが気になる」「ノウハウ」「比較」など目的別に選べます。</p>
+            <strong>使い方</strong>
+            <ol class="mb-0">
+              <li>件数（1〜5件）を選ぶ</li>
+              <li>投稿テーマを選ぶ（任意）</li>
+              <li>「生成する」→ 確認・修正してXに投稿</li>
+            </ol>
+          </div>
+          <div class="col-md-4">
+            <strong>言い訳を潰す投稿文</strong>
+            <p class="mb-1 mt-1">読者の「でも〜だから無理」という不安を先回りして消す投稿。商品・サービスを案内する1〜2週間前に投稿するのが効果的。</p>
+            <strong>使い方</strong>
+            <ol class="mb-0">
+              <li>よくある言い訳を複数選択</li>
+              <li>「言い訳を潰す投稿文を生成」</li>
+              <li>複数日に分けて予約投稿</li>
+            </ol>
+          </div>
+          <div class="col-md-4">
+            <strong>ストーリー型投稿文</strong>
+            <p class="mb-1 mt-1">起承転結で変化を描く投稿。「目新しさ × 変化の大きさ × 予想外の展開」が揃うと読まれる時間が大幅UP。週1〜2回が理想。</p>
+            <strong>使い方</strong>
+            <ol class="mb-0">
+              <li>起・承・転・結を入力</li>
+              <li>「ストーリー投稿文を生成」</li>
+              <li>「動画を生成」でショート動画化も可能</li>
+            </ol>
+          </div>
+        </div>
+        <hr class="my-2">
+        <strong>投稿→予約の流れ</strong>
+        <ol class="mb-0 mt-1">
+          <li>投稿文を生成 →「動画を生成」でMP4ファイルを作成（約15〜21秒の縦型ショート動画）</li>
+          <li>「今日の投稿」で日時を設定して予約</li>
+          <li>時間になったらアプリが通知 → テキストをコピーしてXに投稿</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 生成タブ -->
+<ul class="nav nav-tabs mb-3" id="draftTab">
+  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-normal">通常の投稿文</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-guda">言い訳を潰す投稿文</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-story">ストーリー型投稿文</a></li>
+</ul>
+
+<div class="tab-content mb-4">
+  <!-- 通常 -->
+  <div class="tab-pane fade show active" id="tab-normal">
+    <div class="card" style="max-width:560px">
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="draft_type" value="normal">
+          <div class="row g-2 align-items-end">
+            <div class="col">
+              <label class="form-label mb-1">件数</label>
+              <input type="number" name="count" class="form-control" value="3" min="1" max="10">
+            </div>
+            <div class="col">
+              <label class="form-label mb-1">投稿テーマ（任意）</label>
+              <select name="education_id" class="form-select">
+                <option value="">ランダム</option>
+                {% for edu in edu_stages %}
+                <option value="{{ edu.id }}">{{ edu.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-primary">生成する</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 言い訳を潰す -->
+  <div class="tab-pane fade" id="tab-guda">
+    <div class="card" style="max-width:600px">
+      <div class="card-header small text-muted">
+        「買わない理由（よくある言い訳）」を選ぶと、それを先回りして潰す投稿文を生成します。商品・サービスを案内する前に使うのが効果的です。
+      </div>
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="draft_type" value="guda">
+          {% for g in guda_items %}
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="guda_ids" value="{{ g.id }}" id="guda_{{ g.id }}">
+            <label class="form-check-label" for="guda_{{ g.id }}">
+              <strong>{{ g.label }}</strong>
+              <span class="text-muted small"> — {{ g.desc }}</span>
+            </label>
+          </div>
+          {% endfor %}
+          <div class="mt-3">
+            <button type="submit" class="btn btn-warning">言い訳を潰す投稿文を生成</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ストーリー型 -->
+  <div class="tab-pane fade" id="tab-story">
+    <div class="card" style="max-width:600px">
+      <div class="card-header small text-muted">
+        起承転結の構造でストーリー型投稿文を生成します。「目新しさ × 変化の大きさ × 予想外の展開」が鍵です。
+      </div>
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="draft_type" value="story">
+          <div class="mb-3">
+            <label class="form-label">起 — 出発点・前提（どんな状況から始まったか）</label>
+            <textarea name="ki" class="form-control" rows="2" placeholder="例: 月収18万円の会社員が、副業で月3万円を稼ごうと思い立った"></textarea>
+            <div class="form-text text-muted">💡 読者が「自分のことだ」と感じる過去の状況を書きましょう</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">承 — 進行中・途中経過（どんな状況になったか）</label>
+            <textarea name="sho" class="form-control" rows="2" placeholder="例: 最初の1ヶ月は投稿数ゼロ。見様見まねで始めたが反応は皆無だった"></textarea>
+            <div class="form-text text-muted">💡 リアルな試行錯誤を見せると「本物感」が出ます</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">転 — 転機・事件・ピンチ（予測不能なことが起きた）</label>
+            <textarea name="ten" class="form-control" rows="2" placeholder="例: アカウントが突然凍結。3ヶ月分のフォロワーが消えた"></textarea>
+            <div class="form-text text-muted">💡 予想外の展開が入ると「最後まで読みたい」と思ってもらえます</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">結 — オチ・現在地（今どうなっているか）</label>
+            <textarea name="ketsu" class="form-control" rows="2" placeholder="例: 凍結から復活後、方針を変えたら1ヶ月でフォロワー300人増えた"></textarea>
+            <div class="form-text text-muted">💡 フォロワー数より「変化の大きさ」を数字で表すと伝わりやすいです</div>
+          </div>
+          <button type="submit" class="btn btn-info text-white">ストーリー投稿文を生成</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 投稿チェックリスト（折りたたみ） -->
+<div class="accordion mb-4" id="checklistAccordion" style="max-width:700px">
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed small" type="button" data-bs-toggle="collapse" data-bs-target="#checklist">
+        💡 投稿前チェックリスト（4つの要素）
+      </button>
+    </h2>
+    <div id="checklist" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>要素</th><th>確認ポイント</th></tr></thead>
+          <tbody>
+            <tr><td><strong>クリック率UP</strong></td><td>一文目に「続きが気になる」情報が入っているか（答えを先に出しすぎない）</td></tr>
+            <tr><td><strong>読まれる時間UP</strong></td><td>ストーリー形式・感情の描写・結論を後回しにしているか</td></tr>
+            <tr><td><strong>保存・シェア誘導</strong></td><td>文末に「保存しておけ！」「知ってた？」などの一言があるか</td></tr>
+            <tr><td><strong>やる気を与える</strong></td><td>「自分にもできそう」と思わせる可能性の言葉があるか</td></tr>
+            <tr class="table-warning"><td><strong>「あなた」らしさ</strong></td><td>誰が書いたか分かるか。ノウハウだけでなく価値観・体験が入っているか</td></tr>
+            <tr class="table-warning"><td><strong>続きを追いたくなるか</strong></td><td>読者が「また読みたい」と思う主人公感があるか</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 生成済み投稿文一覧 -->
+<h5 class="mb-3">生成済みの投稿文</h5>
+{% for draft in drafts %}
+{% set type_key = 'guda' if draft.education_name == 'グダ消し' else 'story' if draft.education_name == 'ストーリー型運用' else 'normal' %}
+<div id="drafttext-{{ draft.id }}" style="display:none">{{ draft.text }}</div>
+<div class="card mb-3 {% if draft.reviewed %}border-success{% endif %}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>
+      投稿文 {{ draft.n }}
+      <span class="badge bg-{{ 'warning text-dark' if type_key == 'guda' else 'info text-white' if type_key == 'story' else 'secondary' }} ms-1">
+        {{ '言い訳を潰す' if type_key == 'guda' else 'ストーリー' if type_key == 'story' else '通常' }}
+      </span>
+      <span class="badge source-badge-{{ draft.source }} text-white ms-1">{{ draft.source }}</span>
+      {% if draft.reviewed %}<span class="badge bg-success ms-1">✓ 確認済み</span>{% endif %}
+    </span>
+    <div class="d-flex gap-2 align-items-center">
+      <button class="btn btn-sm btn-outline-dark" onclick="draftCopy({{ draft.id }})">📋 コピー</button>
+      <form method="post" action="{{ url_for('admin.draft_review', draft_id=draft.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm {% if draft.reviewed %}btn-outline-secondary{% else %}btn-outline-success{% endif %}">
+          {% if draft.reviewed %}確認済みを解除{% else %}確認済みにする{% endif %}
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted mb-2">{{ draft.hook }} / {{ draft.target }}</p>
+    <pre class="bg-light p-3 rounded" style="white-space: pre-wrap; font-size: 0.95rem;">{{ draft.text }}</pre>
+    <div class="d-flex gap-2 mt-2 flex-wrap">
+      <a href="{{ url_for('sns.schedule_new', draft_id=draft.id) }}" class="btn btn-sm btn-outline-primary">予約する</a>
+      {% if draft.video_path %}
+        <a href="{{ url_for('sns.serve_video', filename=draft.video_path.split('/')[-1]) }}" class="btn btn-sm btn-outline-success">動画をダウンロード</a>
+      {% else %}
+        <form method="post" action="{{ url_for('sns.generate_video', draft_id=draft.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-outline-secondary">動画を生成する</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">投稿文がまだ生成されていません。上のフォームから生成してください。</div>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function draftCopy(draftId) {
+  const el = document.getElementById('drafttext-' + draftId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✅ コピーしました';
+    btn.classList.replace('btn-outline-dark', 'btn-success');
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.classList.replace('btn-success', 'btn-outline-dark');
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

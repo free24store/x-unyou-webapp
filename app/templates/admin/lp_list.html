@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}LP管理 — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">🌐 LP（ランディングページ）管理</h2>
+  <a href="{{ url_for('admin.lp_new') }}" class="btn btn-primary">➕ 新しいLPを生成</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> LPはあなたのX発信のCTA先として使えます。生成したLPのURLをXプロフィールやリプライに貼り付けましょう。
+</div>
+
+{% if pages %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>タイトル</th>
+        <th>公開URL</th>
+        <th>状態</th>
+        <th>作成日</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for page in pages %}
+      <tr>
+        <td>{{ page.title }}</td>
+        <td>
+          <a href="{{ url_for('public.lp_view', client_id=client_id) }}" target="_blank" class="small">
+            /lp/{{ client_id }}
+          </a>
+          <button class="btn btn-sm btn-outline-secondary ms-1"
+            onclick="navigator.clipboard.writeText('{{ BASE_URL }}{{ url_for('public.lp_view', client_id=client_id) }}')">📋</button>
+        </td>
+        <td>
+          <form method="POST" action="{{ url_for('admin.lp_toggle', page_id=page.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm {{ 'btn-success' if page.is_published else 'btn-secondary' }}">
+              {{ '公開中' if page.is_published else '非公開' }}
+            </button>
+          </form>
+        </td>
+        <td class="small text-muted">{{ page.created_at.strftime('%Y/%m/%d') }}</td>
+        <td>
+          <form method="POST" action="{{ url_for('admin.lp_delete', page_id=page.id) }}" class="d-inline"
+                onsubmit="return confirm('このLPを削除しますか？')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <p class="fs-5">まだLPがありません。</p>
+  <a href="{{ url_for('admin.lp_new') }}" class="btn btn-primary">LPを生成する</a>
+</div>
+{% endif %}
+{% endblock %}

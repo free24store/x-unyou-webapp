@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ platform_label }} 設定{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('sns.settings') }}" class="text-decoration-none text-muted">&larr; SNS設定に戻る</a>
+</div>
+<h4 class="mb-4">{{ platform_label }} — API認証情報</h4>
+
+<div class="card" style="max-width:560px">
+  <div class="card-body">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% for key, label in fields %}
+      <div class="mb-3">
+        <label class="form-label">{{ label }}</label>
+        <input type="password"
+               name="{{ key }}"
+               class="form-control font-monospace"
+               placeholder="{{ '設定済み（変更する場合のみ入力）' if conn and conn.credentials_json.get(key) else '入力してください' }}"
+               autocomplete="off">
+        {% if conn and conn.credentials_json.get(key) %}
+        <div class="form-text text-success">✓ 設定済み</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <div class="d-flex gap-2 mt-3">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <a href="{{ url_for('sns.settings') }}" class="btn btn-outline-secondary">キャンセル</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if platform == 'x' %}
+<div class="alert alert-info mt-3 small" style="max-width:560px">
+  <strong>X (Twitter) API設定手順:</strong><br>
+  1. <a href="https://developer.twitter.com/en/portal/" target="_blank">Twitter Developer Portal</a> でアプリを作成<br>
+  2. Elevated access または Basic planが必要<br>
+  3. 「User authentication settings」で Read and Write を許可<br>
+  4. Consumer Keys と Access Token を生成してここに入力
+</div>
+{% elif platform == 'instagram' %}
+<div class="alert alert-info mt-3 small" style="max-width:560px">
+  <strong>Instagram API設定手順:</strong><br>
+  1. Meta for Developers でアプリを作成（Business タイプ）<br>
+  2. Instagram Graph API のアクセス権限を申請<br>
+  3. Page Access Token（長期トークン）を生成<br>
+  4. Instagram Business Account ID を確認して入力<br>
+  ※ 画像/動画は公開URLが必要です（ローカルファイルは直接送れません）
+</div>
+{% elif platform == 'tiktok' %}
+<div class="alert alert-info mt-3 small" style="max-width:560px">
+  <strong>TikTok API設定手順:</strong><br>
+  1. <a href="https://developers.tiktok.com/" target="_blank">TikTok for Developers</a> でアプリを登録<br>
+  2. Content Posting API の承認を取得<br>
+  3. OAuth2 フローでアクセストークンを取得して入力<br>
+  ※ 投稿はデフォルト「自分のみ（非公開）」に設定されます
+</div>
+{% elif platform == 'youtube' %}
+<div class="alert alert-info mt-3 small" style="max-width:560px">
+  <strong>YouTube API設定手順:</strong><br>
+  1. Google Cloud Console でプロジェクトを作成<br>
+  2. YouTube Data API v3 を有効化<br>
+  3. OAuth2クライアントID（デスクトップアプリ）を作成<br>
+  4. OAuth2認証フローを実行してアクセストークン・リフレッシュトークンを取得<br>
+  ※ アップロードはデフォルト「非公開」に設定されます
+</div>
+{% endif %}
+{% endblock %}

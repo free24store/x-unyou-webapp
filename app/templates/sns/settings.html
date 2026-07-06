@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}SNS連携設定{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">SNS連携設定</h4>
+</div>
+
+<div class="accordion mb-3" id="snsGuide">
+  <div class="accordion-item border-info">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed small py-2 text-info" type="button" data-bs-toggle="collapse" data-bs-target="#snsGuideBody">
+        使い方ガイド — 各プラットフォームの特徴と設定の流れ
+      </button>
+    </h2>
+    <div id="snsGuideBody" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <strong>X (Twitter)</strong>
+            <ul class="mb-2 mt-1">
+              <li>テキスト投稿・画像・動画（MP4）に対応。</li>
+              <li>Developer Portal でアプリ作成 → Elevated または Basic access → Consumer Keys + Access Token を取得。</li>
+              <li><span class="text-danger">注意:</span> X利用規約の自動化ポリシーに注意。人間による投稿と区別できない自動投稿はリスクあり。</li>
+            </ul>
+            <strong>Instagram</strong>
+            <ul class="mb-0 mt-1">
+              <li>Business/Creator アカウント + Meta Graph API 審査が必要。</li>
+              <li>画像・動画はローカルファイルではなく<strong>公開URL</strong>が必要（S3・CDN等）。</li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <strong>TikTok</strong>
+            <ul class="mb-2 mt-1">
+              <li>縦型MP4動画の直接アップロードが可能（Content Posting API）。</li>
+              <li>デフォルトは「<strong>自分のみ（非公開）</strong>」で投稿されます。公開にするにはAPIパラメータを変更する必要あり。</li>
+            </ul>
+            <strong>YouTube</strong>
+            <ul class="mb-0 mt-1">
+              <li>Google Cloud Console でプロジェクト作成 → YouTube Data API v3 有効化 → OAuth2設定。</li>
+              <li>デフォルトは「<strong>非公開</strong>」でアップロードされます。</li>
+              <li>アクセストークンの有効期限切れ時はリフレッシュトークンで自動更新されます。</li>
+            </ul>
+          </div>
+        </div>
+        <hr class="my-2">
+        <strong>設定の流れ</strong>: 各プラットフォームの「設定する」→ APIキー等を入力して保存 → 予約投稿画面で投稿先を選択
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  {% for platform in platforms %}
+  {% set conn = connections.get(platform) %}
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>{{ platform_labels[platform] }}</strong>
+        {% if conn and conn.is_active %}
+          <span class="badge bg-success">連携済み</span>
+        {% else %}
+          <span class="badge bg-secondary">未連携</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if conn and conn.is_active %}
+          <p class="small text-muted mb-2">認証情報が登録されています。更新または解除が可能です。</p>
+          <div class="d-flex gap-2">
+            <a href="{{ url_for('sns.settings_platform', platform=platform) }}" class="btn btn-sm btn-outline-primary">認証情報を更新</a>
+            <form method="post" action="{{ url_for('sns.disconnect_platform', platform=platform) }}" onsubmit="return confirm('{{ platform_labels[platform] }} の連携を解除しますか？')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger">連携解除</button>
+            </form>
+          </div>
+        {% else %}
+          <p class="small text-muted mb-2">API認証情報を設定して連携を有効化します。</p>
+          <a href="{{ url_for('sns.settings_platform', platform=platform) }}" class="btn btn-sm btn-primary">設定する</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="mt-4">
+  <div class="alert alert-warning small">
+    <strong>注意:</strong> APIキー・アクセストークンはデータベースに保存されます。本番環境では暗号化ストレージの利用を推奨します。
+    TikTokはデフォルト「自分のみ」、YouTubeはデフォルト「非公開」で投稿されます。
+  </div>
+</div>
+{% endblock %}

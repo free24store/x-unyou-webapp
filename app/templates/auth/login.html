@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}ログイン{% endblock %}
+{% block content %}
+<style>
+/* ─── 管理者パネル（右下固定）─── */
+#admin-panel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+}
+#admin-login-box {
+  display: none;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.15);
+  padding: 20px;
+  width: 300px;
+  margin-bottom: 8px;
+}
+/* ─── マスターモーダル（隠し）─── */
+#master-modal-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 2000;
+  justify-content: center;
+  align-items: center;
+}
+#master-modal {
+  background: #1a1a2e;
+  color: #eee;
+  border-radius: 12px;
+  padding: 28px 32px;
+  width: 340px;
+  position: relative;
+}
+#master-modal label { color: #ccc; font-size: .85rem; }
+#master-modal .form-control { background: #2a2a3e; border-color: #444; color: #fff; }
+#master-modal .form-control:focus { border-color: #6c8ebf; box-shadow: none; }
+#master-trigger {
+  position: fixed;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #adb5bd;
+  font-size: .75rem;
+  cursor: default;
+  user-select: none;
+}
+</style>
+
+<!-- ─── ユーザーログイン（中央）─── -->
+<div class="row justify-content-center mt-5 mb-5">
+  <div class="col-md-5 col-lg-4">
+
+    <div class="text-center mb-4">
+      <h3 class="fw-bold">X yb boost</h3>
+      <p class="text-muted small">ログインしてください</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} small py-2">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-body p-4">
+        <form method="post" action="{{ url_for('auth.login') }}">
+          {{ form.hidden_tag() }}
+          <div class="mb-3">
+            {{ form.email.label(class="form-label small") }}
+            {{ form.email(class="form-control", placeholder="メールアドレス") }}
+          </div>
+          <div class="mb-3">
+            {{ form.password.label(class="form-label small") }}
+            {{ form.password(class="form-control", placeholder="パスワード") }}
+          </div>
+          <div class="d-grid">
+            {{ form.submit(class="btn btn-primary") }}
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 新規アカウント作成 -->
+    <div class="card border-0 bg-light">
+      <div class="card-body p-4">
+        <h6 class="fw-bold mb-3">新規アカウントを作成する</h6>
+        <form method="post" action="{{ url_for('auth.register') }}">
+          {{ register_form.hidden_tag() }}
+          <div class="mb-2">
+            {{ register_form.display_name.label(class="form-label small") }}
+            {{ register_form.display_name(class="form-control form-control-sm", placeholder="例: たろう") }}
+          </div>
+          <div class="mb-2">
+            {{ register_form.email.label(class="form-label small") }}
+            {{ register_form.email(class="form-control form-control-sm", placeholder="メールアドレス") }}
+          </div>
+          <div class="mb-2">
+            {{ register_form.password.label(class="form-label small") }}
+            {{ register_form.password(class="form-control form-control-sm", placeholder="8文字以上") }}
+          </div>
+          <div class="mb-3">
+            {{ register_form.password2.label(class="form-label small") }}
+            {{ register_form.password2(class="form-control form-control-sm", placeholder="パスワードをもう一度") }}
+          </div>
+          <div class="d-grid">
+            {{ register_form.submit(class="btn btn-outline-primary btn-sm") }}
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── 管理者ログイン（右下固定）─── -->
+<div id="admin-panel">
+  <div id="admin-login-box">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <small class="fw-bold text-muted">管理者ログイン</small>
+      <button type="button" class="btn-close btn-sm" onclick="toggleAdminLogin()"></button>
+    </div>
+    <form method="post" action="{{ url_for('auth.login') }}">
+      <input type="hidden" name="csrf_token" value="{{ form.csrf_token._value() }}">
+      <div class="mb-2">
+        <input type="email" name="email" class="form-control form-control-sm" placeholder="メールアドレス" required>
+      </div>
+      <div class="mb-2">
+        <input type="password" name="password" class="form-control form-control-sm" placeholder="パスワード" required>
+      </div>
+      <div class="d-grid">
+        <button type="submit" class="btn btn-dark btn-sm">ログイン</button>
+      </div>
+    </form>
+  </div>
+  <div class="text-end">
+    <button class="btn btn-sm btn-outline-secondary" onclick="toggleAdminLogin()">管理者の方はこちら</button>
+  </div>
+</div>
+
+<!-- ─── マスターログイン（隠し）─── -->
+<div id="master-modal-backdrop" onclick="closeMasterModal(event)">
+  <div id="master-modal">
+    <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" onclick="closeMasterModal()"></button>
+    <p class="small text-center mb-3" style="color:#888; letter-spacing:.1em;">SYSTEM ACCESS</p>
+    <form method="post" action="{{ url_for('auth.login') }}">
+      <input type="hidden" name="csrf_token" value="{{ form.csrf_token._value() }}">
+      <div class="mb-3">
+        <label class="form-label">メールアドレス</label>
+        <input type="email" name="email" class="form-control form-control-sm" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">パスワード</label>
+        <input type="password" name="password" class="form-control form-control-sm" required>
+      </div>
+      <div class="d-grid">
+        <button type="submit" class="btn btn-sm" style="background:#3a5a8f; color:#fff;">アクセス</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 隠しトリガー（5回クリックでマスターモーダル） -->
+<span id="master-trigger" title="">© X yb boost</span>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 管理者パネル toggle
+function toggleAdminLogin() {
+  const box = document.getElementById('admin-login-box');
+  box.style.display = box.style.display === 'block' ? 'none' : 'block';
+}
+
+// マスターモーダル（フッター5回クリック）
+let masterClickCount = 0;
+let masterClickTimer = null;
+document.getElementById('master-trigger').addEventListener('click', function() {
+  masterClickCount++;
+  clearTimeout(masterClickTimer);
+  masterClickTimer = setTimeout(() => { masterClickCount = 0; }, 2000);
+  if (masterClickCount >= 5) {
+    masterClickCount = 0;
+    document.getElementById('master-modal-backdrop').style.display = 'flex';
+  }
+});
+
+function closeMasterModal(e) {
+  if (!e || e.target === document.getElementById('master-modal-backdrop')) {
+    document.getElementById('master-modal-backdrop').style.display = 'none';
+  }
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeMasterModal();
+});
+</script>
+{% endblock %}

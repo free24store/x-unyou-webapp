@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}指標ログ{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h4 class="mb-4">指標ログ</h4>
+
+<div class="accordion mb-3" id="metricsGuide">
+  <div class="accordion-item border-info">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed small py-2 text-info" type="button" data-bs-toggle="collapse" data-bs-target="#metricsGuideBody">
+        使い方ガイド — 各指標の意味と記録タイミング
+      </button>
+    </h2>
+    <div id="metricsGuideBody" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <strong>指標の意味（ファネル順）</strong>
+            <table class="table table-sm mb-0 mt-1">
+              <tbody>
+                <tr><td>投稿数/日</td><td>その日の総ポスト数。1〜3が目安。</td></tr>
+                <tr><td>平均インプレッション</td><td>過去7日間の1投稿あたり平均表示回数。750以上で目標値。</td></tr>
+                <tr><td>エンゲージメント率(%)</td><td>（いいね+リポスト+返信）÷インプ×100。5%以上が目標。</td></tr>
+                <tr><td>フォロワー増加/日</td><td>前日比フォロワー増減数。月換算400人以上が目標。</td></tr>
+                <tr><td>リスト登録/日</td><td>LINEや無料プレゼント経由の新規登録数。</td></tr>
+                <tr><td>面談率(%)</td><td>リスト登録者のうちZoom等に来た割合。</td></tr>
+                <tr><td>成約率(%)</td><td>面談したうち商品購入した割合。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-md-6">
+            <strong>記録のコツ</strong>
+            <ul class="mb-0 mt-1">
+              <li>毎日同じ時間帯に記録するとトレンドが正確になる（夜21〜23時推奨）。</li>
+              <li>X アナリティクスで「過去7日間」の平均インプを確認。</li>
+              <li>エンゲージメント率はアナリティクスの「エンゲージメント率」の数値を使う。</li>
+              <li>リスト〜成約はファネル下流なので、プレイヤー期は空欄でOK。</li>
+              <li>ファネル上流（インプ・エンゲージ）の⚠が消えてから下流を強化する順番が正しい。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4" style="max-width: 700px;">
+  <div class="card-header">今日の指標を記録</div>
+  <div class="card-body">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">日付</label>
+          <input type="date" name="date" class="form-control">
+        </div>
+        {% set fields = [
+          ('posts_per_day', '投稿数/日'),
+          ('avg_impressions', '平均インプレッション'),
+          ('engagement_rate_pct', 'エンゲージメント率(%)'),
+          ('followers_delta_per_day', 'フォロワー増加/日'),
+          ('list_signups_per_day', 'LINE登録数/日'),
+          ('meeting_rate_pct', 'リスト→面談率(%)'),
+          ('conversion_rate_pct', '面談→成約率(%)'),
+        ] %}
+        {% for name, label in fields %}
+        <div class="col-md-4">
+          <label class="form-label">{{ label }}</label>
+          <input type="number" step="0.01" name="{{ name }}" class="form-control" placeholder="数値">
+        </div>
+        {% endfor %}
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">記録</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if recent %}
+<h6>直近 {{ recent|length }} 件</h6>
+<div class="table-responsive">
+  <table class="table table-sm table-bordered small">
+    <thead class="table-light">
+      <tr>
+        <th>日付</th><th>投稿数</th><th>平均インプ</th><th>エンゲージ%</th><th>フォロワー増</th><th>リスト登録</th><th>面談率%</th><th>成約率%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in recent %}
+      <tr>
+        <td>{{ m.date }}</td>
+        <td>{{ m.posts_per_day or '-' }}</td>
+        <td>{{ m.avg_impressions or '-' }}</td>
+        <td>{{ m.engagement_rate_pct or '-' }}</td>
+        <td>{{ m.followers_delta_per_day or '-' }}</td>
+        <td>{{ m.list_signups_per_day or '-' }}</td>
+        <td>{{ m.meeting_rate_pct or '-' }}</td>
+        <td>{{ m.conversion_rate_pct or '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

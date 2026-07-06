@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}ドラフト{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_user.html" %}{% endblock %}
+{% block content %}
+<h4 class="mb-4">投稿ドラフト</h4>
+{% for draft in drafts %}
+<div class="card mb-3 {% if draft.reviewed %}border-success{% endif %}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>
+      ドラフト{{ draft.n }}
+      <span class="badge source-badge-{{ draft.source }} text-white ms-2">{{ draft.source }}</span>
+      {% if draft.reviewed %}<span class="badge bg-success ms-1">✓ レビュー済み</span>{% endif %}
+    </span>
+    <form method="post" action="{{ url_for('user.draft_review', draft_id=draft.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm {% if draft.reviewed %}btn-outline-secondary{% else %}btn-outline-success{% endif %}">
+        {% if draft.reviewed %}未レビューに戻す{% else %}レビュー済みにする{% endif %}
+      </button>
+    </form>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted mb-1">教育: {{ draft.education_name }}</p>
+    <pre class="bg-light p-2 rounded" style="white-space: pre-wrap; font-size: 0.95rem;">{{ draft.text }}</pre>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">ドラフトはまだありません。管理者に依頼してください。</div>
+{% endfor %}
+{% endblock %}

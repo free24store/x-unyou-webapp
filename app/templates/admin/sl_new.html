@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}セールスレター生成 — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">💰 セールスレターを生成する</h2>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 商品情報・特典・価格・締め切りを入力するとClaude AIがセールスコピーを自動生成します。Stripeの決済リンクを設定すると申し込みボタンが自動で埋め込まれます。
+</div>
+
+<div class="card" style="max-width:640px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">管理用タイトル</label>
+        <input type="text" name="title" class="form-control" placeholder="例：X運用3ヶ月プログラムSL">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">商品・サービス名 <span class="text-danger">*</span></label>
+        <input type="text" name="product_name" class="form-control"
+               placeholder="例：X運用3ヶ月完全サポートプログラム" required>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">価格（円・税込）</label>
+        <div class="input-group">
+          <span class="input-group-text">¥</span>
+          <input type="number" name="price_jpy" class="form-control" placeholder="49800" min="0">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">特典・含まれるもの（1行1項目）</label>
+        <textarea name="benefits" class="form-control" rows="4"
+                  placeholder="専属チャットサポート30日間&#10;週次Zoom面談&#10;投稿テンプレート50本&#10;戦略設計シート"></textarea>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">締め切り・限定条件</label>
+        <input type="text" name="deadline" class="form-control"
+               placeholder="例：7月31日（木）23:59 / 先着5名限定">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">Stripe決済リンク（任意）</label>
+        {% if products %}
+        <select name="stripe_link" class="form-select mb-2">
+          <option value="">── 選択してください ──</option>
+          {% for p in products %}
+          {% if p.payment_link_url %}
+          <option value="{{ p.payment_link_url }}">{{ p.product_name }}（¥{{ "{:,}".format(p.price_jpy) }}）</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+        <div class="form-text">または直接URLを入力：</div>
+        {% endif %}
+        <input type="url" name="stripe_link" class="form-control mt-1"
+               placeholder="https://buy.stripe.com/xxxxx">
+        <div class="form-text">
+          未設定の場合は価格のみ表示されます。
+          <a href="{{ url_for('admin.stripe_product_new') }}" target="_blank">Stripe決済リンクを作成 →</a>
+        </div>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col">
+          <label class="form-label fw-bold">お問い合わせ先メール</label>
+          <input type="email" name="contact_email" class="form-control" placeholder="your@email.com">
+        </div>
+        <div class="col">
+          <label class="form-label fw-bold">お問い合わせ先電話番号</label>
+          <input type="tel" name="contact_phone" class="form-control" placeholder="090-xxxx-xxxx">
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100">
+        ✨ AIでセールスレターを生成する（30〜60秒）
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

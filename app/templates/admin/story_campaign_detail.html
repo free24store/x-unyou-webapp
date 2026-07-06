@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign.title }} — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <a href="{{ url_for('admin.story_campaign_list') }}" class="text-muted small">← キャンペーン一覧</a>
+    <h2 class="h4 mb-0 mt-1">📖 {{ campaign.title }}</h2>
+  </div>
+  <div class="text-end small text-muted">
+    {{ campaign.start_date.strftime('%Y/%m/%d') }} 〜 {{ campaign.end_date.strftime('%Y/%m/%d') }}<br>
+    計{{ campaign.total_posts }}件 | 1日{{ campaign.posts_per_day }}投稿
+  </div>
+</div>
+
+{% if posts %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle table-sm">
+    <thead class="table-light sticky-top">
+      <tr>
+        <th style="min-width:140px">予定日時</th>
+        <th style="min-width:80px">フェーズ</th>
+        <th>投稿テキスト</th>
+        <th style="min-width:80px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for post in posts %}
+      {% set phase_color = {'認知期': 'primary', '信頼構築期': 'info', 'オファー期': 'success'} %}
+      <tr>
+        <td class="small text-muted">{{ post.scheduled_at.strftime('%m/%d(%a) %H:%M') }}</td>
+        <td>
+          {# フェーズはテキストから判断できないので日付ベースで推定表示 #}
+          <span class="badge bg-secondary small">Day{{ loop.index }}</span>
+        </td>
+        <td>
+          <div class="small" style="max-width:500px;white-space:pre-wrap">{{ post.text }}</div>
+          <div class="mt-1">
+            <button class="btn btn-sm btn-outline-secondary py-0"
+                    onclick="copyText('post-{{ post.id }}')">📋 コピー</button>
+            <span id="post-{{ post.id }}" style="display:none">{{ post.text }}</span>
+          </div>
+        </td>
+        <td>
+          <a href="{{ url_for('admin.campaign_post_edit', post_id=post.id) }}"
+             class="btn btn-sm btn-outline-primary py-0">✏️ 編集</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <p>このキャンペーンの予約投稿が見つかりません。</p>
+  <p class="small">（投稿済みや削除済みの可能性があります）</p>
+</div>
+{% endif %}
+
+{% block scripts %}
+<script>
+function copyText(id) {
+  const text = document.getElementById(id).innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    event.target.textContent = '✅ コピー済み';
+    setTimeout(() => event.target.textContent = '📋 コピー', 2000);
+  });
+}
+</script>
+{% endblock %}
+{% endblock %}

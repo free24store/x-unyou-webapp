@@ -1,0 +1,7 @@
+<nav class="col-md-2 sidebar pt-3 d-none d-md-block">
+  <ul class="nav flex-column">
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'user.calendar' %}active fw-bold{% endif %}" href="{{ url_for('user.calendar') }}">カレンダー</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'user.drafts' %}active fw-bold{% endif %}" href="{{ url_for('user.drafts') }}">ドラフト</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'user.metrics_log' %}active fw-bold{% endif %}" href="{{ url_for('user.metrics_log') }}">指標ログ</a></li>
+  </ul>
+</nav>

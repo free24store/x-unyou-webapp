@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: x-yb-boost
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    plan: free
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: BASE_URL
+        value: https://x-yb-boost.onrender.com
+      - key: FLASK_APP
+        value: wsgi
+    disk:
+      name: db-data
+      mountPath: /opt/render/project/src/instance
+      sizeGB: 1

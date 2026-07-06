@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}お問い合わせ受信ボックス — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">📬 お問い合わせ受信ボックス
+  {% if unread > 0 %}
+  <span class="badge bg-danger ms-2">{{ unread }}</span>
+  {% endif %}
+</h2>
+
+{% if messages %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th></th>
+        <th>お名前</th>
+        <th>メール</th>
+        <th>電話</th>
+        <th>内容（先頭50字）</th>
+        <th>経路</th>
+        <th>受信日時</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for msg in messages %}
+      <tr class="{{ '' if msg.is_read else 'table-warning fw-bold' }}">
+        <td>{{ '✅' if msg.is_read else '🆕' }}</td>
+        <td>{{ msg.name }}</td>
+        <td><a href="mailto:{{ msg.email }}">{{ msg.email }}</a></td>
+        <td>{{ msg.phone or '—' }}</td>
+        <td>{{ msg.body[:50] }}{% if msg.body|length > 50 %}…{% endif %}</td>
+        <td><span class="badge bg-secondary">{{ msg.source }}</span></td>
+        <td class="small text-muted">{{ msg.created_at.strftime('%m/%d %H:%M') }}</td>
+        <td>
+          {% if not msg.is_read %}
+          <form method="POST" action="{{ url_for('admin.contact_mark_read', msg_id=msg.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-success">既読にする</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td colspan="8" class="small text-muted py-1 ps-4">{{ msg.body }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <p class="fs-5">📭 まだお問い合わせがありません。</p>
+  <p>LP・セールスレターにお問い合わせフォームを設置すると、ここに届きます。</p>
+</div>
+{% endif %}
+{% endblock %}

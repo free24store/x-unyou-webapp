@@ -1,0 +1,6 @@
+<nav class="col-md-2 sidebar pt-3 d-none d-md-block">
+  <ul class="nav flex-column">
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'master.client_list' %}active fw-bold{% endif %}" href="{{ url_for('master.client_list') }}">クライアント一覧</a></li>
+    <li class="nav-item"><a class="nav-link" href="{{ url_for('master.client_new') }}">＋ クライアント追加</a></li>
+  </ul>
+</nav>

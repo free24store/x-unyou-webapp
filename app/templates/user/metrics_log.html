@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}指標ログ{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_user.html" %}{% endblock %}
+{% block content %}
+<h4 class="mb-4">指標ログ</h4>
+
+<div class="card mb-4" style="max-width: 700px;">
+  <div class="card-header">今日の指標を記録</div>
+  <div class="card-body">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">日付</label>
+          <input type="date" name="date" class="form-control">
+        </div>
+        {% set fields = [
+          ('posts_per_day', '投稿数/日'),
+          ('avg_impressions', '平均インプレッション'),
+          ('engagement_rate_pct', 'エンゲージメント率(%)'),
+          ('followers_delta_per_day', 'フォロワー増加/日'),
+          ('list_signups_per_day', 'リスト登録数/日'),
+          ('meeting_rate_pct', 'リスト→面談率(%)'),
+          ('conversion_rate_pct', '面談→成約率(%)'),
+        ] %}
+        {% for name, label in fields %}
+        <div class="col-md-4">
+          <label class="form-label">{{ label }}</label>
+          <input type="number" step="0.01" name="{{ name }}" class="form-control" placeholder="数値">
+        </div>
+        {% endfor %}
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">記録</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if recent %}
+<h6>直近 {{ recent|length }} 件</h6>
+<div class="table-responsive">
+  <table class="table table-sm table-bordered small">
+    <thead class="table-light">
+      <tr><th>日付</th><th>投稿数</th><th>平均インプ</th><th>エンゲージ%</th><th>フォロワー増</th><th>リスト登録</th><th>面談率%</th><th>成約率%</th></tr>
+    </thead>
+    <tbody>
+      {% for m in recent %}
+      <tr>
+        <td>{{ m.date }}</td>
+        <td>{{ m.posts_per_day or '-' }}</td>
+        <td>{{ m.avg_impressions or '-' }}</td>
+        <td>{{ m.engagement_rate_pct or '-' }}</td>
+        <td>{{ m.followers_delta_per_day or '-' }}</td>
+        <td>{{ m.list_signups_per_day or '-' }}</td>
+        <td>{{ m.meeting_rate_pct or '-' }}</td>
+        <td>{{ m.conversion_rate_pct or '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

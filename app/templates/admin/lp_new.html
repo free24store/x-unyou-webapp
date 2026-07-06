@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}LP生成 — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">🌐 LP（ランディングページ）を生成する</h2>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> プロフィール情報をもとにClaude AIがLP全体のコピーを自動で書きます。LINEのURLを入れるとCTAボタンも自動で設定されます。
+</div>
+
+<div class="card" style="max-width:600px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">LPのタイトル（管理用）</label>
+        <input type="text" name="title" class="form-control" placeholder="例：X運用LP_2026年7月版" required>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">LINE公式アカウントのURL <span class="text-danger">*</span></label>
+        <input type="url" name="line_url" class="form-control"
+               placeholder="https://lin.ee/xxxxx"
+               value="{{ profile.line_url if profile.line_url is defined else '' }}" required>
+        <div class="form-text">LPのCTAボタン（LINE追加）のリンク先になります</div>
+      </div>
+
+      <div class="border rounded p-3 mb-3 bg-light small">
+        <strong>使用するプロフィール情報：</strong><br>
+        発信テーマ: {{ profile.genre or '未設定' }}<br>
+        ターゲット: {{ profile.who or '未設定' }}<br>
+        提供価値: {{ profile.what or '未設定' }}<br>
+        実績: {{ profile.achievement or '未設定' }}
+        <a href="{{ url_for('admin.profile') }}" class="ms-2">✏️ 変更</a>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100">
+        ✨ AIでLPを生成する（30〜60秒かかります）
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

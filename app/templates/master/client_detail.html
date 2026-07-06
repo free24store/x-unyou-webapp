@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} — 詳細{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_master.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{{ url_for('master.client_list') }}" class="btn btn-sm btn-outline-secondary">← 一覧</a>
+  <h4 class="mb-0">{{ client.name }}</h4>
+</div>
+
+{% if profile %}
+<div class="card mb-4">
+  <div class="card-header">プロフィール概要</div>
+  <div class="card-body row g-2 small">
+    <div class="col-md-4"><strong>ジャンル:</strong> {{ profile.genre or '未設定' }}</div>
+    <div class="col-md-4"><strong>Who:</strong> {{ profile.who or '未設定' }}</div>
+    <div class="col-md-4"><strong>What:</strong> {{ profile.what or '未設定' }}</div>
+    <div class="col-md-4"><strong>表示名:</strong> {{ profile.display_name or '未設定' }}</div>
+    <div class="col-md-4"><strong>立ち位置:</strong> {{ profile.position or '未設定' }}</div>
+    <div class="col-md-4"><strong>実績:</strong> {{ profile.achievement or '未設定' }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% set note_post_url = url_for('master.add_note', client_id=client.id) %}
+{% set show_note_form = true %}
+{% include "partials/_analytics.html" %}
+{% endblock %}
+
+{% block scripts %}{% endblock %}

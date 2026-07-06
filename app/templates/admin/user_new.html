@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}メンバー招待{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h4 class="mb-4">メンバー招待</h4>
+<div class="card" style="max-width: 500px;">
+  <div class="card-body">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3">
+        <label class="form-label">メールアドレス</label>
+        <input type="email" name="email" class="form-control" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">パスワード</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">表示名</label>
+        <input type="text" name="display_name" class="form-control" placeholder="メンバー">
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">招待</button>
+        <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary">キャンセル</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

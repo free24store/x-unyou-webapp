@@ -1,0 +1,189 @@
+{#
+  Required context variables:
+    phase, phase_label, diagnostics (list), notes (list of ConsultNote),
+    metric_labels (list of date strings), metric_series (dict of metric→list),
+    show_note_form (bool) — True for master view, False for admin view
+#}
+
+{% set phase_color = {'player': 'secondary', 'early': 'primary', 'monetize': 'success'} %}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+  <h5 class="mb-0">現在のフェーズ</h5>
+  <span class="badge bg-{{ phase_color.get(phase, 'secondary') }} fs-6 px-3 py-2">{{ phase_label }}</span>
+</div>
+
+<!-- マネタイズ可能域ゲージ -->
+{% if true %}
+{% set _impr_list = metric_series.avg_impressions | default([]) | select | list %}
+{% set _fol_list = metric_series.followers_delta_per_day | default([]) | select | list %}
+{% set _eng_list = metric_series.engagement_rate_pct | default([]) | select | list %}
+{% set last_impr = _impr_list[-1] if _impr_list else 0 %}
+{% set last_fol = _fol_list[-1] if _fol_list else 0 %}
+{% set last_eng = _eng_list[-1] if _eng_list else 0 %}
+<div class="card mb-4 border-warning">
+  <div class="card-header bg-warning bg-opacity-10 fw-bold">マネタイズ可能域への進捗</div>
+  <div class="card-body pb-2">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="d-flex justify-content-between small mb-1">
+          <span>平均インプレッション</span>
+          <span>{{ last_impr | default(0, true) | int }} / 750</span>
+        </div>
+        <div class="progress" style="height:12px">
+          <div class="progress-bar bg-primary" style="width: {{ [((last_impr or 0) / 750 * 100), 100] | min | int }}%"></div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="d-flex justify-content-between small mb-1">
+          <span>フォロワー増加（月換算）</span>
+          <span>{{ ((last_fol or 0) * 30) | int }} / 400</span>
+        </div>
+        <div class="progress" style="height:12px">
+          <div class="progress-bar bg-success" style="width: {{ [((last_fol or 0) * 30 / 400 * 100), 100] | min | int }}%"></div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="d-flex justify-content-between small mb-1">
+          <span>エンゲージメント率</span>
+          <span>{{ last_eng | default(0, true) | round(1) }}% / 5%</span>
+        </div>
+        <div class="progress" style="height:12px">
+          <div class="progress-bar bg-warning" style="width: {{ [((last_eng or 0) / 5 * 100), 100] | min | int }}%"></div>
+        </div>
+      </div>
+    </div>
+    {% if phase == 'monetize' %}
+    <p class="text-success small mt-2 mb-0 fw-bold">✓ マネタイズ可能域に到達しています。</p>
+    {% elif not metric_labels %}
+    <p class="text-muted small mt-2 mb-0">指標を記録するとゲージが更新されます。</p>
+    {% else %}
+    <p class="text-muted small mt-2 mb-0">3つの指標がすべて目標を超えるとマネタイズ可能域と判定されます。</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Trend Charts -->
+{% if metric_labels %}
+<div class="row g-3 mb-4">
+  {% set charts = [
+    ('avg_impressions', '平均インプ', 'rgba(13,110,253,0.7)'),
+    ('engagement_rate_pct', 'エンゲージ率(%)', 'rgba(25,135,84,0.7)'),
+    ('followers_delta_per_day', 'フォロワー増加/日', 'rgba(255,193,7,0.7)'),
+    ('list_signups_per_day', 'リスト登録/日', 'rgba(220,53,69,0.7)'),
+    ('meeting_rate_pct', 'リスト→面談率(%)', 'rgba(111,66,193,0.7)'),
+    ('conversion_rate_pct', '面談→成約率(%)', 'rgba(13,202,240,0.7)'),
+  ] %}
+  {% for key, label, color in charts %}
+  <div class="col-md-6">
+    <div class="card p-2">
+      <div class="card-body p-1">
+        <canvas id="chart_{{ key }}" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+(function(){
+  const labels = {{ metric_labels | tojson }};
+  const series = {{ metric_series | tojson }};
+  const configs = [
+    ['avg_impressions', '平均インプ', 'rgba(13,110,253,0.7)'],
+    ['engagement_rate_pct', 'エンゲージ率(%)', 'rgba(25,135,84,0.7)'],
+    ['followers_delta_per_day', 'フォロワー増加/日', 'rgba(255,193,7,0.7)'],
+    ['list_signups_per_day', 'リスト登録/日', 'rgba(220,53,69,0.7)'],
+    ['meeting_rate_pct', 'リスト→面談率(%)', 'rgba(111,66,193,0.7)'],
+    ['conversion_rate_pct', '面談→成約率(%)', 'rgba(13,202,240,0.7)'],
+  ];
+  configs.forEach(([key, label, color]) => {
+    const ctx = document.getElementById('chart_' + key);
+    if (!ctx) return;
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: label,
+          data: series[key],
+          borderColor: color,
+          backgroundColor: color.replace('0.7', '0.15'),
+          tension: 0.3,
+          fill: true,
+          pointRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true, position: 'top' } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  });
+})();
+</script>
+{% else %}
+<div class="alert alert-info mb-4">指標データがまだありません。指標ログから記録してください。</div>
+{% endif %}
+
+<!-- Funnel Diagnostics -->
+<h6 class="mt-2 mb-2">ファネル診断（上流から）</h6>
+{% if diagnostics %}
+<div class="table-responsive mb-4">
+  <table class="table table-sm table-bordered align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>項目</th><th>現在値</th><th>目標</th><th>状態</th><th>原因 / 対策</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in diagnostics %}
+      <tr class="{% if d.status == 'warning' %}table-warning{% endif %}">
+        <td>{{ d.label }}</td>
+        <td>{{ d.value }}</td>
+        <td>{{ d.target }}</td>
+        <td>{% if d.status == 'ok' %}<span class="text-success fw-bold">✓</span>{% else %}<span class="text-warning fw-bold">⚠</span>{% endif %}</td>
+        <td>
+          {% if d.status == 'warning' %}
+          <small><strong>原因:</strong> {{ d.cause }}<br><strong>対策:</strong> {{ d.action }}</small>
+          {% else %}
+          <small class="text-muted">達成</small>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-secondary mb-4">最新指標がないため診断できません。</div>
+{% endif %}
+
+<!-- Consult Notes -->
+<h6 class="mb-2">マスターコンサルノート</h6>
+
+{% if show_note_form %}
+<form method="post" action="{{ note_post_url }}" class="mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="mb-2">
+    <textarea name="body" class="form-control" rows="3" placeholder="コンサルノートを入力..." required></textarea>
+  </div>
+  <button type="submit" class="btn btn-sm btn-primary">ノートを追加</button>
+</form>
+{% endif %}
+
+{% if notes %}
+<div class="list-group">
+  {% for note in notes %}
+  <div class="list-group-item">
+    <div class="d-flex justify-content-between">
+      <small class="text-muted">{{ note.created_at.strftime('%Y-%m-%d %H:%M') }} — {{ note.author.display_name or note.author.email }}</small>
+    </div>
+    <p class="mb-0 mt-1" style="white-space: pre-wrap;">{{ note.body }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-muted">コンサルノートはまだありません。</p>
+{% endif %}

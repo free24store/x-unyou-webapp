@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}クライアント一覧{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_master.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">クライアント一覧</h4>
+  <a href="{{ url_for('master.client_new') }}" class="btn btn-primary btn-sm">＋ クライアント追加</a>
+</div>
+
+{% if summaries %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-light">
+      <tr><th>クライアント名</th><th>フェーズ</th><th>直近 平均インプ</th><th>直近 エンゲージ率</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in summaries %}
+      <tr>
+        <td>{{ s.client.name }}</td>
+        <td><span class="badge phase-badge-{{ s.phase }} text-white">{{ s.phase_label }}</span></td>
+        <td>{{ s.latest.avg_impressions if s.latest else '-' }}</td>
+        <td>{{ s.latest.engagement_rate_pct if s.latest else '-' }}</td>
+        <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('master.client_detail', client_id=s.client.id) }}">詳細</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">クライアントがまだいません。「＋ クライアント追加」から作成してください。</div>
+{% endif %}
+{% endblock %}

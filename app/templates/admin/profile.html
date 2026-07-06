@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}アカウント設定{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h4 class="mb-4">✏️ アカウント設定</h4>
+
+<div class="alert alert-warning d-flex gap-2 align-items-start mb-4 small">
+  <span>💡 Point:</span>
+  <span>「誰のために」「何を届けるか」を明確にすることが、フォロワーを増やす一番の近道です。まずここを埋めるところから始めましょう。</span>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header fw-bold">あなたの発信コンセプトを設定する</div>
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">発信テーマ <span class="text-muted small">（例: X副業、ダイエット、英語学習）</span></label>
+              <input type="text" name="genre" class="form-control" value="{{ profile.genre }}">
+              <div class="form-text">💡 迷ったら「自分が一番詳しいこと」にしましょう</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">名前・肩書き <span class="text-muted small">（X に表示される名前）</span></label>
+              <input type="text" name="display_name" class="form-control" value="{{ profile.display_name }}" placeholder="例: たろう@副業月30万">
+              <div class="form-text">💡 名前＋「何者か」を一言で入れると覚えてもらいやすい</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">読者（ターゲット）<span class="text-muted small"> — どんな人に向けて発信しますか？</span></label>
+              <input type="text" name="who" class="form-control" value="{{ profile.who }}" placeholder="例: Xで稼ぎたいと思っている20代サラリーマン">
+              <div class="form-text">💡 「まだ何も始めていない人」に絞ると刺さりやすくなります</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">読者に達成してほしいゴール <span class="text-muted small">— 数字で書くと説得力UP</span></label>
+              <input type="text" name="what" class="form-control" value="{{ profile.what }}" placeholder="例: Xコンテンツ販売で月30万円">
+              <div class="form-text">💡 あなた自身のゴールではなく「読者が達成したいこと」を書きます</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">ゴールまでの道筋 <span class="text-muted small">— どうやって連れていきますか？</span></label>
+              <input type="text" name="how" class="form-control" value="{{ profile.how }}" placeholder="例: ステップバイステップで収益化の仕組みを構築">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">あなた自身の立場・特徴 <span class="text-muted small">（弱さや不利な点もOK）</span></label>
+              <input type="text" name="position" class="form-control" value="{{ profile.position }}" placeholder="例: 高卒ニートから副業月30万">
+              <div class="form-text">💡 「すごい人」より「自分に近い人の話」の方が信頼されます</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">実績 <span class="text-muted small">（数字で具体的に）</span></label>
+              <input type="text" name="achievement" class="form-control" value="{{ profile.achievement }}" placeholder="例: フォロワー1000人・月商30万円">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">今の成長ステージ</label>
+              <select name="current_phase" class="form-select">
+                {% for val, label in [('player','始めたて期（表示回数1000未満）'),('early','伸び期（表示回数2000以上）'),('monetize','収益化期')] %}
+                <option value="{{ val }}" {% if profile.current_phase == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">💡 ステージに合わせた投稿スケジュールが自動生成されます</div>
+            </div>
+          </div>
+          <div class="mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">保存する</button>
+            <button type="button" class="btn btn-outline-secondary" id="genBioBtn">自己紹介文を自動生成</button>
+          </div>
+        </form>
+
+        <div id="bioResult" class="mt-3" style="display:none">
+          <div class="card border-primary">
+            <div class="card-header small fw-bold">自動生成された自己紹介文（X のプロフィールに使えます）</div>
+            <div class="card-body">
+              <pre id="bioText" class="mb-2" style="white-space: pre-wrap; font-size:0.95rem;"></pre>
+              <button class="btn btn-sm btn-outline-dark" onclick="copyBio()">📋 コピーする</button>
+            </div>
+          </div>
+          <div class="alert alert-warning small mt-2 mb-0">
+            💡 Point: そのままコピーせず、自分の言葉に少し直すと「あなたらしさ」が伝わります
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-header fw-bold">X プロフィールの5つの要素</div>
+      <div class="card-body small">
+        <ol class="mb-0">
+          <li class="mb-2">
+            <strong>名前</strong> — 短くて覚えやすい名前 ＋ 何者かを一言で
+            <br><span class="text-muted">例: たろう@副業月30万 / 花子@ダイエット記録中</span>
+          </li>
+          <li class="mb-2">
+            <strong>アイコン画像</strong> — 顔が見える写真 or キャラクター（文字だけはNG）
+          </li>
+          <li class="mb-2">
+            <strong>ヘッダー画像</strong> — 発信テーマが一目でわかる画像
+            <br><span class="text-muted">スマホで文字が読めるサイズにすること</span>
+          </li>
+          <li class="mb-2">
+            <strong>自己紹介文（4要素）</strong>
+            <ul class="mt-1">
+              <li>① 今やっていること</li>
+              <li>② 実績（できれば数字）</li>
+              <li>③ 自分の立場・特徴</li>
+              <li>④ 続きが気になる一言</li>
+            </ul>
+          </li>
+          <li class="mb-0">
+            <strong>固定投稿</strong> — 自己紹介・実績をまとめた投稿を一番上に固定する
+          </li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header fw-bold">ステージ別の投稿戦略メモ</div>
+      <div class="card-body small">
+        <p class="mb-1"><strong>始めたて期（表示回数1000未満）</strong></p>
+        <ul class="mb-2">
+          <li>週3回以上「続きが気になる投稿」を出す</li>
+          <li>「私が教えます」という上から目線はNG</li>
+          <li>絵文字・改行の使いすぎに注意</li>
+        </ul>
+        <p class="mb-1"><strong>伸び期（表示回数2000以上）</strong></p>
+        <ul class="mb-0">
+          <li>週2〜3回「続きが気になる投稿」継続</li>
+          <li>ノウハウ系の投稿も少し混ぜてOK</li>
+          <li>LINE登録やZoom相談の案内が効きやすくなる</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('genBioBtn').addEventListener('click', function() {
+  this.disabled = true;
+  this.textContent = '生成中...';
+  const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+  fetch('{{ url_for("admin.generate_bio") }}', {
+    method: 'POST',
+    headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+  })
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('bioText').textContent = data.bio || '生成に失敗しました（設定を保存してから再度お試しください）';
+    document.getElementById('bioResult').style.display = 'block';
+    this.disabled = false;
+    this.textContent = '自己紹介文を再生成';
+  })
+  .catch(() => {
+    this.disabled = false;
+    this.textContent = '自己紹介文を自動生成';
+  });
+});
+
+function copyBio() {
+  const text = document.getElementById('bioText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = event.target;
+    btn.textContent = '✅ コピーしました';
+    setTimeout(() => { btn.textContent = '📋 コピーする'; }, 2000);
+  });
+}
+</script>
+{% endblock %}

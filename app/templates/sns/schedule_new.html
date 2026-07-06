@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}予約投稿を作成{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('sns.schedule_list') }}" class="text-decoration-none text-muted">&larr; 予約投稿一覧に戻る</a>
+</div>
+<h4 class="mb-4">予約投稿を作成</h4>
+
+{% if not connections %}
+<div class="alert alert-warning">
+  SNS連携が設定されていません。<a href="{{ url_for('sns.settings') }}">SNS設定</a>からAPIキーを登録してください。
+</div>
+{% endif %}
+
+<div class="card" style="max-width:640px">
+  <div class="card-body">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <!-- ドラフト選択 -->
+      <div class="mb-3">
+        <label class="form-label">ドラフトから読み込む（任意）</label>
+        <select name="draft_id" id="draft_select" class="form-select">
+          <option value="">— 直接入力する —</option>
+          {% for d in drafts %}
+          <option value="{{ d.id }}" {% if pre_draft_id and pre_draft_id|string == d.id|string %}selected{% endif %}>
+            [{{ d.education_name or '通常' }}] {{ d.text[:50] }}{% if d.text|length > 50 %}…{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- 投稿テキスト -->
+      <div class="mb-3">
+        <label class="form-label">投稿テキスト <span class="text-danger">*</span></label>
+        <textarea name="text" id="post_text" class="form-control" rows="6"
+                  placeholder="投稿内容を入力…&#10;Xは280字まで自動で切り詰めます">{{ pre_text }}</textarea>
+        <div class="form-text" id="char_count">0 文字</div>
+      </div>
+
+      <!-- プラットフォーム選択 -->
+      <div class="mb-3">
+        <label class="form-label">投稿先 <span class="text-danger">*</span></label>
+        <div class="d-flex flex-wrap gap-2">
+          {% for platform in platforms %}
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="radio" name="platform" id="plt_{{ platform }}" value="{{ platform }}"
+                   {% if not connections.get(platform) %}disabled title="未連携"{% endif %}>
+            <label class="form-check-label {% if not connections.get(platform) %}text-muted{% endif %}" for="plt_{{ platform }}">
+              {{ platform_labels[platform] }}
+              {% if not connections.get(platform) %}<small>(未設定)</small>{% endif %}
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- 動画オプション -->
+      <div class="mb-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="use_video" value="1" id="use_video">
+          <label class="form-check-label" for="use_video">
+            ショート動画を添付する（ドラフト選択時のみ有効）
+          </label>
+        </div>
+        <div class="form-text">動画がまだ生成されていない場合は自動生成します。数秒かかります。</div>
+      </div>
+
+      <!-- 予約日時 -->
+      <div class="mb-4">
+        <label class="form-label">予約日時（JST） <span class="text-danger">*</span></label>
+        <input type="datetime-local" name="scheduled_at" class="form-control"
+               style="max-width:280px"
+               value="{{ (now + timedelta(hours=1)).strftime('%Y-%m-%dT%H:00') if now is defined else '' }}">
+        <div class="form-text">指定時刻の約1分以内に自動投稿されます（サーバー稼働中のみ）。</div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">予約登録</button>
+        <a href="{{ url_for('sns.schedule_list') }}" class="btn btn-outline-secondary">キャンセル</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ドラフト選択 → テキスト自動入力
+const drafts = {
+  {% for d in drafts %}
+  "{{ d.id }}": {{ d.text | tojson }},
+  {% endfor %}
+};
+const draftSelect = document.getElementById('draft_select');
+const postText = document.getElementById('post_text');
+const charCount = document.getElementById('char_count');
+
+function updateCount() {
+  charCount.textContent = postText.value.length + ' 文字';
+}
+
+draftSelect.addEventListener('change', function() {
+  const text = drafts[this.value];
+  if (text) postText.value = text;
+  updateCount();
+});
+
+postText.addEventListener('input', updateCount);
+updateCount();
+</script>
+{% endblock %}

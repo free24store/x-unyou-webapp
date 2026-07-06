@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}予約投稿{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">予約投稿一覧</h4>
+  <a href="{{ url_for('sns.schedule_new') }}" class="btn btn-primary btn-sm">+ 新規予約</a>
+</div>
+
+<div class="accordion mb-3" id="schedGuide">
+  <div class="accordion-item border-info">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed small py-2 text-info" type="button" data-bs-toggle="collapse" data-bs-target="#schedGuideBody">
+        使い方ガイド — 予約投稿の仕組みとステータスの見方
+      </button>
+    </h2>
+    <div id="schedGuideBody" class="accordion-collapse collapse">
+      <div class="accordion-body small">
+        <div class="row g-3">
+          <div class="col-md-5">
+            <strong>自動実行の仕組み</strong>
+            <ul class="mb-0 mt-1">
+              <li>サーバー起動中、1分ごとに「予約中」の投稿をチェックして自動送信します。</li>
+              <li>指定時刻を過ぎると最大1分以内に実行されます（サーバーが稼働している場合）。</li>
+              <li>「今すぐ」ボタンで手動でも即時実行できます。</li>
+              <li><span class="text-warning">注意:</span> サーバーが停止中は実行されません。サーバー起動時に未実行分がまとめて送信されます。</li>
+            </ul>
+          </div>
+          <div class="col-md-4">
+            <strong>ステータスの意味</strong>
+            <table class="table table-sm mb-0 mt-1">
+              <tbody>
+                <tr><td><span class="badge bg-primary">予約中</span></td><td>まだ実行されていない</td></tr>
+                <tr><td><span class="badge bg-success">投稿済み</span></td><td>正常に投稿完了</td></tr>
+                <tr><td><span class="badge bg-danger">失敗</span></td><td>APIエラー（行をホバーで詳細表示）</td></tr>
+                <tr><td><span class="badge bg-secondary">キャンセル</span></td><td>手動でキャンセルした</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-md-3">
+            <strong>ショート動画の流れ</strong>
+            <ol class="mb-0 mt-1">
+              <li>ドラフト画面で「動画を生成」</li>
+              <li>「予約投稿」で動画チェックON</li>
+              <li>TikTok/YouTubeでは動画が自動添付</li>
+              <li>Xはメディアとして添付</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-info d-flex align-items-center gap-2 mb-3 small">
+  <span>📋 <strong>手動投稿モード</strong> — 投稿時刻になったら「テキストをコピー」→ X に貼り付けて投稿 → 「投稿済みにする」でステータス更新</span>
+</div>
+
+{% if posts %}
+<!-- 全テキストを hidden で持つ（JS用） -->
+{% for post in posts %}
+<div id="text-{{ post.id }}" style="display:none">{{ post.text }}</div>
+{% endfor %}
+
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>予約日時</th>
+        <th>プラットフォーム</th>
+        <th>投稿テキスト</th>
+        <th>ステータス</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for post in posts %}
+      {% set is_due = post.scheduled_at <= now %}
+      <tr class="{% if post.status == 'pending' and is_due %}table-warning{% endif %}">
+        <td class="small text-nowrap">
+          {{ post.scheduled_at.strftime('%m/%d %H:%M') }}
+          {% if post.status == 'pending' and is_due %}<br><span class="badge bg-warning text-dark">投稿時刻！</span>{% endif %}
+        </td>
+        <td>
+          <span class="badge bg-{% if post.platform == 'x' %}dark{% elif post.platform == 'instagram' %}warning text-dark{% elif post.platform == 'tiktok' %}danger{% else %}success{% endif %}">
+            {{ platform_labels.get(post.platform, post.platform) }}
+          </span>
+        </td>
+        <td style="max-width:320px;">
+          <div class="small text-muted mb-1" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            {{ post.text[:60] }}{% if post.text|length > 60 %}…{% endif %}
+          </div>
+          <button class="btn btn-sm btn-outline-dark" onclick="copyText({{ post.id }})">📋 テキストをコピー</button>
+        </td>
+        <td>
+          {% if post.status == 'pending' %}
+            <span class="badge bg-primary">予約中</span>
+          {% elif post.status == 'posted' %}
+            <span class="badge bg-success">投稿済み</span>
+          {% elif post.status == 'failed' %}
+            <span class="badge bg-danger">失敗</span>
+          {% elif post.status == 'cancelled' %}
+            <span class="badge bg-secondary">キャンセル</span>
+          {% endif %}
+        </td>
+        <td class="text-nowrap">
+          {% if post.status == 'pending' %}
+          <form method="post" action="{{ url_for('sns.mark_posted', post_id=post.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-success">✓ 投稿済み</button>
+          </form>
+          <form method="post" action="{{ url_for('sns.schedule_cancel', post_id=post.id) }}" class="d-inline" onsubmit="return confirm('キャンセルしますか？')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">取消</button>
+          </form>
+          {% elif post.status == 'posted' and post.post_id %}
+          <small class="text-muted">ID: {{ post.post_id }}</small>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">予約投稿がありません。上の「+ 新規予約」から作成してください。</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyText(postId) {
+  const el = document.getElementById('text-' + postId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✅ コピーしました';
+    btn.classList.replace('btn-outline-dark', 'btn-success');
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.classList.replace('btn-success', 'btn-outline-dark');
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

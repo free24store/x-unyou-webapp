@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}カレンダー{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_user.html" %}{% endblock %}
+{% block content %}
+<h4 class="mb-4">週次カレンダー</h4>
+{% for entry in entries %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between">
+    <span>Week {{ entry.week_no }} — フェーズ: {{ entry.phase_at_generation }}</span>
+    <small class="text-muted">{{ entry.generated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+  </div>
+  <div class="card-body p-0">
+    {% for day in entry.content_json %}
+    <div class="border-bottom px-3 py-2">
+      <strong>{{ day.date }} ({{ day.weekday }})</strong>
+      <ul class="mb-0 mt-1 small">
+        {% for slot in day.slots %}
+        <li>投稿{{ slot.post_no }}: 「{{ slot.type }}」 / 教育: {{ slot.education_name }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">カレンダーはまだ生成されていません。管理者に依頼してください。</div>
+{% endfor %}
+{% endblock %}

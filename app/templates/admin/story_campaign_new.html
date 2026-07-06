@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}キャンペーン作成 — X yb boost{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">📖 ストーリーキャンペーンを作成する</h2>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong>
+  期間・1日の投稿数・商品名を設定するだけで、ストーリーアーク（認知→信頼→オファー）に沿った投稿が自動生成されます。
+  「今すぐテキスト生成」をオンにするとClaude AIが全投稿文を書きます（時間がかかります）。
+</div>
+
+<div class="card" style="max-width:640px">
+  <div class="card-body">
+    <form method="POST" id="campaign-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">キャンペーン名</label>
+        <input type="text" name="title" class="form-control"
+               placeholder="例：7月X集客キャンペーン" required>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">訴求する商品・サービス名（任意）</label>
+        <input type="text" name="product_name" class="form-control"
+               placeholder="例：X運用3ヶ月完全サポートプログラム">
+        <div class="form-text">入力するとオファー期の投稿がその商品に最適化されます</div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col">
+          <label class="form-label fw-bold">開始日 <span class="text-danger">*</span></label>
+          <input type="date" name="start_date" class="form-control"
+                 value="{{ today.isoformat() }}" required>
+        </div>
+        <div class="col">
+          <label class="form-label fw-bold">終了日 <span class="text-danger">*</span></label>
+          <input type="date" name="end_date" class="form-control"
+                 value="{{ (today.replace(day=today.day+29)).isoformat() if today.day <= 2 else today.isoformat() }}"
+                 required>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col">
+          <label class="form-label fw-bold">1日あたりの投稿数</label>
+          <select name="posts_per_day" class="form-select" id="ppd-select">
+            <option value="1" selected>1投稿/日</option>
+            <option value="2">2投稿/日</option>
+            <option value="3">3投稿/日</option>
+          </select>
+        </div>
+        <div class="col">
+          <label class="form-label fw-bold">投稿プラットフォーム</label>
+          <select name="platform" class="form-select">
+            <option value="x" selected>X (Twitter)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-bold">予測投稿数：<span id="post-count">—</span>件</label>
+        <div class="form-text">最大200件まで。期間✕1日投稿数で算出されます。</div>
+      </div>
+
+      <div class="mb-3">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="generate_now" value="1" id="gen-now" checked>
+          <label class="form-check-label" for="gen-now">
+            今すぐAIで投稿テキストを生成する（推奨）
+          </label>
+        </div>
+        <div class="form-text">OFFにするとスケジュールのみ作成され、テキストは後で手動編集できます。</div>
+      </div>
+
+      {% if image_ok %}
+      <div class="mb-3">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="with_image" value="1" id="with-img">
+          <label class="form-check-label" for="with-img">
+            DALL-E 3で投稿画像を自動生成する（OPENAI_API_KEY設定済）
+          </label>
+        </div>
+        <div class="form-text text-warning">⚠️ 画像生成はOpenAI APIの費用がかかります（1枚約$0.04）</div>
+      </div>
+      {% endif %}
+
+      <div class="border rounded p-3 mb-3 bg-light small">
+        <strong>使用するプロフィール情報：</strong><br>
+        発信テーマ: {{ profile.genre or '未設定' }} |
+        ターゲット: {{ profile.who or '未設定' }} |
+        提供価値: {{ profile.what or '未設定' }}
+        <a href="{{ url_for('admin.profile') }}" class="ms-2">✏️ 変更</a>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100" id="submit-btn">
+        ✨ キャンペーンを作成する
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="mt-4 small text-muted">
+  <strong>ストーリーアーク（自動割り当て）：</strong><br>
+  認知期（前半40%）: 自己紹介・悩み共感・問題提起<br>
+  信頼構築期（中盤35%）: 実績・価値提供・教育コンテンツ<br>
+  オファー期（後半25%）: ベネフィット訴求・限定感・CTA
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const startInput = document.querySelector('[name="start_date"]');
+const endInput   = document.querySelector('[name="end_date"]');
+const ppdSelect  = document.getElementById('ppd-select');
+const countSpan  = document.getElementById('post-count');
+const submitBtn  = document.getElementById('submit-btn');
+
+function updateCount() {
+  const s = new Date(startInput.value);
+  const e = new Date(endInput.value);
+  if (!isNaN(s) && !isNaN(e) && e >= s) {
+    const days = Math.round((e - s) / 86400000) + 1;
+    const total = days * parseInt(ppdSelect.value);
+    countSpan.textContent = total;
+    countSpan.className = total > 200 ? 'text-danger fw-bold' : 'text-success fw-bold';
+    submitBtn.disabled = total > 200;
+  }
+}
+startInput.addEventListener('change', updateCount);
+endInput.addEventListener('change', updateCount);
+ppdSelect.addEventListener('change', updateCount);
+updateCount();
+
+document.getElementById('campaign-form').addEventListener('submit', function() {
+  submitBtn.disabled = true;
+  submitBtn.textContent = '⏳ 生成中です（しばらくお待ちください）';
+});
+</script>
+{% endblock %}
