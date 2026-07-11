@@ -9,7 +9,11 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ANTHROPIC_API_KEY
-        sync: false
+        sync: false   # 任意: 未設定でもアプリは動作します（AI強化なしのテンプレートモードで動きます）
+      - key: OPENAI_API_KEY
+        sync: false   # 任意: 未設定の場合は画像生成機能が無効になります
+      - key: STRIPE_SECRET_KEY
+        sync: false   # 任意: 未設定の場合はStripe決済リンク自動生成が無効になります
       - key: BASE_URL
         value: https://x-yb-boost.onrender.com
       - key: FLASK_APP

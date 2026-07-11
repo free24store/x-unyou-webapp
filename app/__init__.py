@@ -63,6 +63,14 @@ def create_app():
     def inject_base_url():
         return {"BASE_URL": app.config["BASE_URL"]}
 
+    @app.context_processor
+    def inject_api_status():
+        return dict(api_status={
+            "claude": bool(os.environ.get("ANTHROPIC_API_KEY")),
+            "openai": bool(os.environ.get("OPENAI_API_KEY")),
+            "stripe": bool(os.environ.get("STRIPE_SECRET_KEY")),
+        })
+
     @app.cli.command("init-db")
     def init_db():
         db.create_all()
