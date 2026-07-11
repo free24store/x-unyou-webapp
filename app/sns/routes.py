@@ -161,8 +161,8 @@ def schedule_new():
                                    connections=connections, drafts=drafts,
                                    platform_labels=PLATFORM_LABELS, platforms=PLATFORMS)
         if platform not in connections:
-            flash(f"{PLATFORM_LABELS[platform]} の認証情報が設定されていません。", "danger")
-            return redirect(url_for("sns.settings"))
+            # API未接続でも手動投稿モードで予約を許可（コピー→手動投稿→「投稿済み」で完了）
+            flash(f"{PLATFORM_LABELS[platform]} のAPI連携が未設定です。手動でXに投稿し「投稿済み」にしてください。", "warning")
 
         scheduled_at = datetime.strptime(scheduled_at_str, "%Y-%m-%dT%H:%M")
         media_path = None
@@ -311,9 +311,7 @@ def _execute_post(post: ScheduledPost):
         client_id=post.client_id, platform=post.platform, is_active=True
     ).first()
     if not conn:
-        post.status = "failed"
-        post.error_msg = "認証情報が見つかりません。SNS設定を確認してください。"
-        db.session.commit()
+        # API未接続 → 自動投稿をスキップ（pending のまま残す。手動投稿で対応）
         return
 
     from ..services.sns_service import post_to_platform
