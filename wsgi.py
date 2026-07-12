@@ -1,26 +1,37 @@
-from app import create_app
-from flask import redirect, url_for
-from flask_login import current_user
+import sys
+import traceback
 
-app = create_app()
+try:
+    from app import create_app
+    from flask import redirect, url_for
+    from flask_login import current_user
 
-# 起動時にDBテーブルを自動作成（Renderのディスク永続化と組み合わせて使う）
-with app.app_context():
-    from app.extensions import db
-    import os
-    os.makedirs(os.path.join(app.instance_path), exist_ok=True)
-    db.create_all()
+    app = create_app()
 
+    # 起動時にDBテーブルを自動作成
+    with app.app_context():
+        from app.extensions import db
+        import os
+        os.makedirs(os.path.join(app.instance_path), exist_ok=True)
+        try:
+            db.create_all()
+        except Exception as db_err:
+            print(f"[wsgi] WARNING: db.create_all() failed: {db_err}", file=sys.stderr)
 
-@app.route("/")
-def index():
-    if current_user.is_authenticated:
-        if current_user.role == "master":
-            return redirect(url_for("master.client_list"))
-        if current_user.role == "admin":
-            return redirect(url_for("admin.analytics"))
-        return redirect(url_for("user.calendar"))
-    return redirect(url_for("auth.login"))
+    @app.route("/")
+    def index():
+        if current_user.is_authenticated:
+            if current_user.role == "master":
+                return redirect(url_for("master.client_list"))
+            if current_user.role == "admin":
+                return redirect(url_for("admin.analytics"))
+            return redirect(url_for("user.calendar"))
+        return redirect(url_for("auth.login"))
+
+except Exception:
+    # Render のログにエラー全文を出力してから再 raise
+    traceback.print_exc(file=sys.stderr)
+    raise
 
 
 if __name__ == "__main__":
