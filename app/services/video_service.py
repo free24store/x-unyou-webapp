@@ -68,7 +68,7 @@ def _wrap_text(text: str, font, max_width: int, draw):
 
 def _draw_slide(title: str, body: str, subtitle: str = "",
                 bg_color=BG_COLOR, accent=ACCENT_COLOR,
-                progress: float = 0.0) -> np.ndarray:
+                progress: float = 0.0):
     """1枚のスライド画像 (numpy array) を生成する。"""
     img = Image.new("RGB", (WIDTH, HEIGHT), bg_color)
     draw = ImageDraw.Draw(img)
