@@ -48,7 +48,7 @@ def _get_font(size: int):
     return ImageFont.load_default()
 
 
-def _wrap_text(text: str, font, max_width: int, draw) -> list[str]:
+def _wrap_text(text: str, font, max_width: int, draw):
     words = text.split()
     lines = []
     current = ""
