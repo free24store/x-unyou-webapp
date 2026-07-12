@@ -9,8 +9,12 @@ import textwrap
 from pathlib import Path
 from datetime import datetime
 
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+try:
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 try:
     import imageio
@@ -121,8 +125,8 @@ def generate_story_video(story: dict, profile: dict, output_dir: str) -> str:
     output_dir: 保存先ディレクトリ
     Returns: 生成されたMP4ファイルの絶対パス
     """
-    if not IMAGEIO_AVAILABLE:
-        raise RuntimeError("imageio がインストールされていません: pip install imageio imageio-ffmpeg")
+    if not PIL_AVAILABLE or not IMAGEIO_AVAILABLE:
+        raise RuntimeError("動画生成ライブラリ（numpy/Pillow/imageio）がインストールされていません。")
 
     os.makedirs(output_dir, exist_ok=True)
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -158,8 +162,8 @@ def generate_draft_video(draft_text: str, profile: dict, output_dir: str) -> str
     通常ドラフトテキストからショート動画を生成する。
     テキストを Hook / 本編 / CTA の3パートに自動分割。
     """
-    if not IMAGEIO_AVAILABLE:
-        raise RuntimeError("imageio がインストールされていません")
+    if not PIL_AVAILABLE or not IMAGEIO_AVAILABLE:
+        raise RuntimeError("動画生成ライブラリ（numpy/Pillow/imageio）がインストールされていません。")
 
     os.makedirs(output_dir, exist_ok=True)
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

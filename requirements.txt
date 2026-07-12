@@ -5,14 +5,17 @@ flask-wtf
 werkzeug
 python-dotenv
 email-validator
-tweepy>=4.16.0
 apscheduler
-Pillow
-imageio
-imageio-ffmpeg
-google-api-python-client
-google-auth-oauthlib
 requests
-numpy
-stripe
 gunicorn
+# 以下はオプション（未設定でも動作します）
+tweepy>=4.16.0
+stripe
+# 動画生成（重いためRender無料プランでは除外推奨）
+# Pillow
+# imageio
+# imageio-ffmpeg
+# numpy
+# Google YouTube連携（オプション）
+# google-api-python-client
+# google-auth-oauthlib
