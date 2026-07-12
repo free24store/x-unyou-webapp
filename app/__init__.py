@@ -38,26 +38,29 @@ def create_app():
     from .public import bp as public_bp
     app.register_blueprint(public_bp)
 
-    # APScheduler: 予約投稿を1分ごとにチェック
-    from apscheduler.schedulers.background import BackgroundScheduler
-    scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
+    # APScheduler: 予約投稿を1分ごとにチェック（失敗してもアプリは起動する）
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
 
-    def _run_scheduled_posts():
-        with app.app_context():
-            from datetime import datetime
-            from .models import ScheduledPost
-            from .sns.routes import _execute_post
-            now = datetime.utcnow()
-            pending = ScheduledPost.query.filter(
-                ScheduledPost.status == "pending",
-                ScheduledPost.scheduled_at <= now,
-            ).all()
-            for post in pending:
-                _execute_post(post)
+        def _run_scheduled_posts():
+            with app.app_context():
+                from datetime import datetime
+                from .models import ScheduledPost
+                from .sns.routes import _execute_post
+                now = datetime.utcnow()
+                pending = ScheduledPost.query.filter(
+                    ScheduledPost.status == "pending",
+                    ScheduledPost.scheduled_at <= now,
+                ).all()
+                for post in pending:
+                    _execute_post(post)
 
-    scheduler.add_job(_run_scheduled_posts, "interval", minutes=1, id="scheduled_posts")
-    scheduler.start()
-    app.scheduler = scheduler
+        scheduler.add_job(_run_scheduled_posts, "interval", minutes=1, id="scheduled_posts")
+        scheduler.start()
+        app.scheduler = scheduler
+    except Exception:
+        app.scheduler = None
 
     @app.context_processor
     def inject_base_url():
