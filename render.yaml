@@ -3,7 +3,7 @@ services:
     name: x-yb-boost
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     plan: free
     envVars:
       - key: SECRET_KEY
