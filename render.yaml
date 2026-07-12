@@ -1,24 +1,19 @@
 services:
   - type: web
-    name: x-yb-boost
+    name: x-unyou-webapp
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
-    plan: free
     envVars:
       - key: SECRET_KEY
         generateValue: true
       - key: ANTHROPIC_API_KEY
-        sync: false   # 任意: 未設定でもアプリは動作します（AI強化なしのテンプレートモードで動きます）
+        sync: false
       - key: OPENAI_API_KEY
-        sync: false   # 任意: 未設定の場合は画像生成機能が無効になります
+        sync: false
       - key: STRIPE_SECRET_KEY
-        sync: false   # 任意: 未設定の場合はStripe決済リンク自動生成が無効になります
+        sync: false
       - key: BASE_URL
-        value: https://x-yb-boost.onrender.com
+        value: https://x-unyou-webapp.onrender.com
       - key: FLASK_APP
         value: wsgi
-    disk:
-      name: db-data
-      mountPath: /opt/render/project/src/instance
-      sizeGB: 1
