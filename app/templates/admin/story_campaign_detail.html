@@ -14,12 +14,40 @@
 </div>
 
 {% if posts %}
+{# E6-6: 一括承認UI。承認ゲート導入で pending が滞留するのをまとめて解消する。 #}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div class="small">
+        <span class="badge bg-warning text-dark">承認待ち {{ pending_count }}件</span>
+        <span class="badge bg-primary ms-1">承認済み {{ approved_count }}件</span>
+        <div class="text-muted mt-1">⚠️ 承認しないと自動投稿されません。</div>
+      </div>
+      <div class="text-nowrap">
+        <form method="post" action="{{ url_for('admin.story_campaign_approve_all', campaign_id=campaign.id) }}"
+              class="d-inline"
+              onsubmit="return confirm('承認待ちの{{ pending_count }}件をすべて承認しますか？承認すると予約時刻に自動投稿されます。');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-primary"{% if pending_count == 0 %} disabled{% endif %}>⚡ 一括承認</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.story_campaign_unapprove_all', campaign_id=campaign.id) }}"
+              class="d-inline"
+              onsubmit="return confirm('承認済みの{{ approved_count }}件の承認を取り消しますか？これらは自動投稿されません。');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-outline-warning"{% if approved_count == 0 %} disabled{% endif %}>一括承認取消</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="table-responsive">
   <table class="table table-hover align-middle table-sm">
     <thead class="table-light sticky-top">
       <tr>
         <th style="min-width:140px">予定日時</th>
         <th style="min-width:80px">フェーズ</th>
+        <th style="min-width:90px">状態</th>
         <th>投稿テキスト</th>
         <th style="min-width:80px"></th>
       </tr>
@@ -32,6 +60,18 @@
         <td>
           {# フェーズはテキストから判断できないので日付ベースで推定表示 #}
           <span class="badge bg-secondary small">Day{{ loop.index }}</span>
+        </td>
+        <td>
+          {% if post.status == 'pending' %}
+            <span class="badge bg-warning text-dark">承認待ち</span>
+          {% elif post.status == 'approved' %}
+            <span class="badge bg-primary">承認済み</span>
+            {% if post.approved_at %}<div class="small text-muted mt-1">{{ post.approved_at.strftime('%m/%d %H:%M') }} 承認</div>{% endif %}
+          {% elif post.status == 'posted' %}
+            <span class="badge bg-success">投稿済み</span>
+          {% else %}
+            <span class="badge bg-light text-dark">{{ post.status_label }}</span>
+          {% endif %}
         </td>
         <td>
           <div class="small" style="max-width:500px;white-space:pre-wrap">{{ post.text }}</div>

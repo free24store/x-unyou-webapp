@@ -143,6 +143,9 @@ def create_app():
             ("scheduled_post", "approved_at", "TIMESTAMP"),
             ("scheduled_post", "approved_by_user_id", "INTEGER"),
             ("scheduled_post", "posted_at", "TIMESTAMP"),
+            # E3-6: 低インプ投稿クリーンアップ。既存行は NULL（未計測）のままでよい。
+            ("scheduled_post", "impressions", "INTEGER"),
+            ("scheduled_post", "imp_checked_at", "TIMESTAMP"),
         ]
 
         dialect = db.engine.dialect.name

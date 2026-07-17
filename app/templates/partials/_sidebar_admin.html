@@ -11,6 +11,7 @@
     <li class="nav-item mt-2"><span class="nav-link text-muted small px-3 py-1">X 連携</span></li>
     <li class="nav-item"><a class="nav-link {% if 'sns.settings' in (request.endpoint or '') %}active fw-bold{% endif %}" href="{{ url_for('sns.settings') }}">🔗 X連携設定</a></li>
     <li class="nav-item"><a class="nav-link {% if 'sns.schedule' in (request.endpoint or '') %}active fw-bold{% endif %}" href="{{ url_for('sns.schedule_list') }}">📤 今日の投稿</a></li>
+    <li class="nav-item"><a class="nav-link {% if 'sns.cleanup' in (request.endpoint or '') %}active fw-bold{% endif %}" href="{{ url_for('sns.cleanup') }}">🧹 投稿クリーンアップ</a></li>
 
     <li class="nav-item mt-2"><span class="nav-link text-muted small px-3 py-1">X 自動投稿</span></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.story_campaign_list','admin.story_campaign_new','admin.story_campaign_detail','admin.campaign_post_edit') %}active fw-bold{% endif %}" href="{{ url_for('admin.story_campaign_list') }}">📖 ストーリーキャンペーン</a></li>

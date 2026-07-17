@@ -9,7 +9,9 @@ from ..models import (Client, User, ProfileConcept, MetricEntry,
                       ConsultNote, CalendarEntry, Draft,
                       LandingPage, SalesLetter, LineStepSet,
                       ContactMessage, StripeProduct, StoryCampaign,
-                      ScheduledPost, Testimonial)
+                      ScheduledPost, Testimonial,
+                      POST_STATUS_PENDING, POST_STATUS_APPROVED,
+                      POST_STATUS_LABELS, can_transition)
 from ..services.vocab import load_vocab
 from ..services.diagnostics_service import infer_phase, funnel_diagnostics, PHASE_LABELS
 from ..services.calendar_service import generate_calendar
@@ -833,7 +835,78 @@ def story_campaign_detail(campaign_id):
              .order_by(ScheduledPost.scheduled_at)
              .all())
 
-    return render_template("admin/story_campaign_detail.html", campaign=campaign, posts=posts)
+    pending_count = sum(1 for p in posts if p.status == POST_STATUS_PENDING)
+    approved_count = sum(1 for p in posts if p.status == POST_STATUS_APPROVED)
+
+    return render_template("admin/story_campaign_detail.html",
+                           campaign=campaign, posts=posts,
+                           pending_count=pending_count,
+                           approved_count=approved_count)
+
+
+def _campaign_posts_by_status(campaign, client_id, statuses):
+    """当該キャンペーン期間内・当該clientの ScheduledPost を status で絞って返す。"""
+    return (ScheduledPost.query
+            .filter_by(client_id=client_id)
+            .filter(ScheduledPost.status.in_(statuses))
+            .filter(ScheduledPost.scheduled_at >= datetime.combine(campaign.start_date, datetime.min.time()))
+            .filter(ScheduledPost.scheduled_at <= datetime.combine(campaign.end_date, datetime.max.time()))
+            .all())
+
+
+@bp.route("/story-campaign/<int:campaign_id>/approve-all", methods=["POST"])
+def story_campaign_approve_all(campaign_id):
+    """一括承認: 当該キャンペーン期間内の pending 予約を approved に遷移。
+    承認済みだけが自動投稿の対象になる（実投稿はここでは発生しない）。"""
+    client_id = _client_id()
+    campaign = StoryCampaign.query.get_or_404(campaign_id)
+    if campaign.client_id != client_id:
+        abort(403)
+
+    posts = _campaign_posts_by_status(campaign, client_id, [POST_STATUS_PENDING])
+    now = datetime.utcnow()
+    approved = 0
+    for post in posts:
+        if not can_transition(post.status, POST_STATUS_APPROVED):
+            continue
+        post.status = POST_STATUS_APPROVED
+        post.approved_at = now
+        post.approved_by_user_id = current_user.id
+        approved += 1
+    db.session.commit()
+
+    if approved:
+        flash(f"{approved}件を一括承認しました。予約時刻になったら自動投稿されます。", "success")
+    else:
+        flash("承認待ちの予約はありませんでした。", "info")
+    return redirect(url_for("admin.story_campaign_detail", campaign_id=campaign.id))
+
+
+@bp.route("/story-campaign/<int:campaign_id>/unapprove-all", methods=["POST"])
+def story_campaign_unapprove_all(campaign_id):
+    """一括承認取消: 当該キャンペーン期間内の approved 予約を pending に引き戻す。
+    投稿済みには手を出さない（POST_STATUS_TRANSITIONS で保証）。"""
+    client_id = _client_id()
+    campaign = StoryCampaign.query.get_or_404(campaign_id)
+    if campaign.client_id != client_id:
+        abort(403)
+
+    posts = _campaign_posts_by_status(campaign, client_id, [POST_STATUS_APPROVED])
+    reverted = 0
+    for post in posts:
+        if not can_transition(post.status, POST_STATUS_PENDING):
+            continue
+        post.status = POST_STATUS_PENDING
+        post.approved_at = None
+        post.approved_by_user_id = None
+        reverted += 1
+    db.session.commit()
+
+    if reverted:
+        flash(f"{reverted}件の承認を取り消しました。これらは自動投稿されません。", "warning")
+    else:
+        flash("承認済みの予約はありませんでした。", "info")
+    return redirect(url_for("admin.story_campaign_detail", campaign_id=campaign.id))
 
 
 @bp.route("/story-campaign/<int:campaign_id>/delete", methods=["POST"])

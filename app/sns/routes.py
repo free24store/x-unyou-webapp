@@ -19,8 +19,8 @@ from ..extensions import db
 from ..models import (
     SnsConnection, ScheduledPost, Draft, PLATFORMS, PLATFORM_LABELS,
     POST_STATUS_PENDING, POST_STATUS_APPROVED, POST_STATUS_POSTED,
-    POST_STATUS_FAILED, POST_STATUS_CANCELLED, POST_STATUS_LABELS,
-    can_transition,
+    POST_STATUS_FAILED, POST_STATUS_CANCELLED, POST_STATUS_DELETED,
+    POST_STATUS_LABELS, can_transition,
 )
 from ..services.video_service import generate_story_video, generate_draft_video
 from ..services.offer_service import resolve_offer_url, compose_with_cta
@@ -491,3 +491,268 @@ def _execute_post(post: ScheduledPost):
         post.error_msg = str(e)
         flash(f"投稿に失敗しました: {e}", "danger")
     db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# E3-6: 低インプ投稿クリーンアップ（承認ゲート付き・実削除は不可逆）
+#
+# 投稿後に伸びなかった（インプ低）ツイートを、人が選んで承認した分だけ削除する。
+# 無差別・自動の一括削除は絶対にしない。実削除は X API(tweepy)の認証が
+# 揃っているときだけ実施し、無ければ手動削除リンクを出す（テンプレファースト）。
+# ---------------------------------------------------------------------------
+
+# 検出の既定値（画面のフォームで調整できるが、既定はここ）。
+DEFAULT_CLEANUP_MIN_HOURS = 3       # 投稿後この時間を過ぎた投稿だけを候補にする
+DEFAULT_CLEANUP_IMP_THRESHOLD = 10  # インプがこの値未満なら「低インプ」
+
+
+def _is_tweet_id(post_id):
+    """実在するツイートIDらしいか（手動投稿の "manual" 等を除外）。"""
+    return bool(post_id) and str(post_id).isdigit()
+
+
+def _extract_post_id(raw):
+    """ツイートURL or 数値文字列から post_id を取り出す。取れなければ None。"""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return raw
+    # https://x.com/<user>/status/1234567890  や末尾クエリ付きにも対応
+    import re
+    m = re.search(r"status(?:es)?/(\d+)", raw)
+    return m.group(1) if m else None
+
+
+def _tweet_manual_url(post_id):
+    """手動削除用のツイートURL（ユーザー名不明でも i/web/status で開ける）。"""
+    return f"https://x.com/i/web/status/{post_id}"
+
+
+def x_delete_available(client_id):
+    """このクライアントで X API による実削除が可能か。
+
+    条件（すべて満たすときのみ True）:
+      1. tweepy がインストール済み（Render軽量化のため遅延import＋try/except）
+      2. 有効な X 連携があり、4種の認証情報が揃っている
+    False のときは実削除せず、手動削除リンクに倒す。
+    """
+    try:
+        import tweepy  # noqa: F401
+    except Exception:
+        return False
+    conn = SnsConnection.query.filter_by(
+        client_id=client_id, platform="x", is_active=True
+    ).first()
+    if not conn:
+        return False
+    creds = conn.credentials_json or {}
+    required = ("api_key", "api_secret", "access_token", "access_token_secret")
+    return all(creds.get(k) for k in required)
+
+
+def _delete_x_tweet(post_id, credentials):
+    """tweepy で実ツイートを削除する。呼び出し側で認証の有無を必ず確認すること。"""
+    import tweepy
+    client = tweepy.Client(
+        consumer_key=credentials["api_key"],
+        consumer_secret=credentials["api_secret"],
+        access_token=credentials["access_token"],
+        access_token_secret=credentials["access_token_secret"],
+    )
+    client.delete_tweet(post_id)
+
+
+def find_low_impression_candidates(client_id, hours, threshold, now):
+    """低インプ削除候補を返す（検出のみ・削除はしない）。
+
+    候補の条件（すべて満たすもの）:
+      - status == posted（投稿済み。削除済み/未投稿は対象外）
+      - post_id が実在するツイートID（"manual" 等は除外）
+      - posted_at が hours 時間以上前
+      - impressions が計測済み（NULL は対象外＝安全側）かつ threshold 未満
+    """
+    cutoff = now - timedelta(hours=hours)
+    posts = (ScheduledPost.query
+             .filter(ScheduledPost.client_id == client_id,
+                     ScheduledPost.status == POST_STATUS_POSTED,
+                     ScheduledPost.platform == "x",
+                     ScheduledPost.posted_at.isnot(None),
+                     ScheduledPost.posted_at <= cutoff,
+                     ScheduledPost.impressions.isnot(None),
+                     ScheduledPost.impressions < threshold)
+             .order_by(ScheduledPost.impressions.asc(),
+                       ScheduledPost.posted_at.asc())
+             .all())
+    return [p for p in posts if _is_tweet_id(p.post_id)]
+
+
+def _cleanup_params():
+    """フォーム/クエリから hours・threshold を安全に取り出す（既定にフォールバック）。"""
+    def _int(name, default, lo, hi):
+        try:
+            val = int(request.values.get(name, ""))
+        except (TypeError, ValueError):
+            return default
+        return max(lo, min(hi, val))
+    hours = _int("hours", DEFAULT_CLEANUP_MIN_HOURS, 0, 24 * 30)
+    threshold = _int("threshold", DEFAULT_CLEANUP_IMP_THRESHOLD, 0, 10_000_000)
+    return hours, threshold
+
+
+@bp.route("/cleanup")
+def cleanup():
+    """低インプ投稿クリーンアップ画面（検出＋インプ記録＋承認削除の入口）。"""
+    client_id = _client_id()
+    hours, threshold = _cleanup_params()
+    now = datetime.utcnow()
+
+    # インプ記録用: X の投稿済み投稿（新しい順）。ここに手入力でインプを記録する。
+    posted = (ScheduledPost.query
+              .filter(ScheduledPost.client_id == client_id,
+                      ScheduledPost.status == POST_STATUS_POSTED,
+                      ScheduledPost.platform == "x")
+              .order_by(ScheduledPost.posted_at.desc())
+              .limit(100).all())
+
+    candidates = find_low_impression_candidates(client_id, hours, threshold, now)
+
+    return render_template("sns/cleanup.html",
+                           posted=posted,
+                           candidates=candidates,
+                           hours=hours,
+                           threshold=threshold,
+                           default_hours=DEFAULT_CLEANUP_MIN_HOURS,
+                           default_threshold=DEFAULT_CLEANUP_IMP_THRESHOLD,
+                           api_delete_available=x_delete_available(client_id),
+                           is_tweet_id=_is_tweet_id,
+                           tweet_url=_tweet_manual_url,
+                           now=now)
+
+
+@bp.route("/cleanup/impressions", methods=["POST"])
+def cleanup_record_impressions():
+    """インプを手入力で記録する。
+
+    - 行内フォーム: post_pk（ScheduledPost.id）で対象を特定
+    - 紐付けフォーム: url_or_id（ツイートURL or post_id）で posted 投稿を検索
+    どちらも impressions を必須とする。承認ゲートには関係しない（計測値の記録のみ）。
+    """
+    client_id = _client_id()
+    hours, threshold = _cleanup_params()
+
+    imp_raw = request.form.get("impressions", "").strip()
+    try:
+        impressions = int(imp_raw)
+        if impressions < 0:
+            raise ValueError
+    except ValueError:
+        flash("インプレッション数は0以上の整数で入力してください。", "danger")
+        return redirect(url_for("sns.cleanup", hours=hours, threshold=threshold))
+
+    post = None
+    post_pk = request.form.get("post_pk")
+    if post_pk:
+        post = ScheduledPost.query.get(post_pk)
+    else:
+        pid = _extract_post_id(request.form.get("url_or_id"))
+        if pid:
+            post = (ScheduledPost.query
+                    .filter_by(client_id=client_id, post_id=pid,
+                               status=POST_STATUS_POSTED)
+                    .first())
+
+    if post is None or post.client_id != client_id:
+        flash("対象の投稿が見つかりませんでした（ツイートURL/IDをご確認ください）。", "warning")
+        return redirect(url_for("sns.cleanup", hours=hours, threshold=threshold))
+    if post.status != POST_STATUS_POSTED:
+        flash("投稿済みの投稿にのみインプを記録できます。", "warning")
+        return redirect(url_for("sns.cleanup", hours=hours, threshold=threshold))
+
+    post.impressions = impressions
+    post.imp_checked_at = datetime.utcnow()
+    db.session.commit()
+    flash(f"インプレッションを記録しました（{impressions}）。", "success")
+    return redirect(url_for("sns.cleanup", hours=hours, threshold=threshold))
+
+
+@bp.route("/cleanup/delete", methods=["POST"])
+def cleanup_delete():
+    """承認付き削除。チェックした投稿だけを対象にする（無差別一括はしない）。
+
+    - X API の認証が揃っていれば tweepy で実削除し status=deleted に更新。
+    - 揃っていなければ実削除せず、手動削除リンクを表示（テンプレファースト）。
+    人が選び・確認したものだけを処理する。承認前に外部書き込みしない。
+    """
+    client_id = _client_id()
+    hours, threshold = _cleanup_params()
+    selected = request.form.getlist("post_ids")
+    if not selected:
+        flash("削除する投稿が選択されていません。", "warning")
+        return redirect(url_for("sns.cleanup", hours=hours, threshold=threshold))
+
+    # 選択された投稿を、テナント整合＋状態＋実IDで厳格に絞る。
+    posts = []
+    for pk in selected:
+        p = ScheduledPost.query.get(pk)
+        if (p is None or p.client_id != client_id
+                or p.status != POST_STATUS_POSTED or not _is_tweet_id(p.post_id)):
+            continue
+        posts.append(p)
+
+    if not posts:
+        flash("削除対象として有効な投稿がありませんでした。", "warning")
+        return redirect(url_for("sns.cleanup", hours=hours, threshold=threshold))
+
+    if not x_delete_available(client_id):
+        # 実削除はしない。手動削除リンクを提示する（キー無しで tweepy を呼ばない）。
+        manual = [{"post": p, "url": _tweet_manual_url(p.post_id)} for p in posts]
+        flash(f"X API未接続のため自動削除は行いませんでした。下のリンクから手動で削除し、"
+              f"「削除済みにする」を押してください（{len(manual)}件）。", "warning")
+        return render_template("sns/cleanup.html",
+                               posted=[], candidates=[],
+                               manual_delete=manual,
+                               hours=hours, threshold=threshold,
+                               default_hours=DEFAULT_CLEANUP_MIN_HOURS,
+                               default_threshold=DEFAULT_CLEANUP_IMP_THRESHOLD,
+                               api_delete_available=False,
+                               is_tweet_id=_is_tweet_id,
+                               tweet_url=_tweet_manual_url,
+                               now=datetime.utcnow())
+
+    # ここに来るのは認証が揃っているときのみ。tweepy で実削除する。
+    conn = SnsConnection.query.filter_by(
+        client_id=client_id, platform="x", is_active=True
+    ).first()
+    creds = conn.credentials_json or {}
+    deleted, failed = 0, 0
+    for p in posts:
+        if not can_transition(p.status, POST_STATUS_DELETED):
+            continue
+        try:
+            _delete_x_tweet(p.post_id, creds)
+            p.status = POST_STATUS_DELETED
+            deleted += 1
+        except Exception as e:
+            p.error_msg = f"削除失敗: {e}"
+            failed += 1
+    db.session.commit()
+
+    if deleted:
+        flash(f"{deleted}件のツイートを削除しました。", "success")
+    if failed:
+        flash(f"{failed}件は削除に失敗しました（詳細はエラーを確認してください）。", "danger")
+    return redirect(url_for("sns.cleanup", hours=hours, threshold=threshold))
+
+
+@bp.route("/cleanup/<int:post_id>/mark-deleted", methods=["POST"])
+def cleanup_mark_deleted(post_id):
+    """手動でXから削除した投稿を「削除済み」にマークする（外部書き込みなし）。"""
+    post = _owned_post_or_403(post_id)
+    if not can_transition(post.status, POST_STATUS_DELETED):
+        flash(f"この投稿は削除済みにできません（現在: {POST_STATUS_LABELS.get(post.status, post.status)}）。", "warning")
+        return redirect(url_for("sns.cleanup"))
+    post.status = POST_STATUS_DELETED
+    db.session.commit()
+    flash("削除済みにしました。", "success")
+    return redirect(url_for("sns.cleanup"))

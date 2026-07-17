@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}投稿クリーンアップ{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">🧹 投稿クリーンアップ</h4>
+  <a href="{{ url_for('sns.schedule_list') }}" class="btn btn-outline-secondary btn-sm">← 予約投稿へ</a>
+</div>
+
+<div class="alert alert-danger small mb-3">
+  <strong>⚠ 実削除は取り消せません。</strong>
+  伸びなかった（低インプ）ツイートを、<strong>あなたが選んで承認した分だけ</strong>削除します。
+  無差別・自動の一括削除は行いません。
+  {% if api_delete_available %}
+    <br>X API連携あり → チェックした投稿を<strong>自動削除</strong>できます。
+  {% else %}
+    <br><span class="text-dark">X API未接続 → 自動削除はできません。</span>手動削除リンクを表示します（テンプレートモード）。
+  {% endif %}
+</div>
+
+{# ---- 手動削除リンク（API未接続時に削除を試みたとき表示） ---- #}
+{% if manual_delete %}
+<div class="card border-warning mb-4">
+  <div class="card-header bg-warning-subtle"><strong>手動削除リンク</strong>（{{ manual_delete|length }}件）</div>
+  <div class="card-body">
+    <p class="small text-muted mb-2">各リンクを開き、X上で削除してから「削除済みにする」を押してください。</p>
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr><th>本文</th><th>インプ</th><th>ツイート</th><th>操作</th></tr></thead>
+      <tbody>
+        {% for m in manual_delete %}
+        <tr>
+          <td class="small" style="max-width:320px;">{{ m.post.text[:60] }}{% if m.post.text|length > 60 %}…{% endif %}</td>
+          <td class="small">{{ m.post.impressions if m.post.impressions is not none else '-' }}</td>
+          <td><a href="{{ m.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-dark">🔗 開いて手動削除</a></td>
+          <td>
+            <form method="post" action="{{ url_for('sns.cleanup_mark_deleted', post_id=m.post.id) }}" class="d-inline" onsubmit="return confirm('X上で削除済みですか？「削除済み」に更新します。')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-secondary">削除済みにする</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ---- 検出条件フォーム ---- #}
+<div class="card mb-4">
+  <div class="card-header"><strong>検出条件</strong></div>
+  <div class="card-body">
+    <form method="get" action="{{ url_for('sns.cleanup') }}" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small mb-0">投稿後の経過時間（時間）</label>
+        <input type="number" name="hours" min="0" class="form-control form-control-sm" value="{{ hours }}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">インプ閾値（未満を候補に）</label>
+        <input type="number" name="threshold" min="0" class="form-control form-control-sm" value="{{ threshold }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">再検出</button>
+      </div>
+      <div class="col-auto small text-muted">既定: {{ default_hours }}時間 / {{ default_threshold }}インプ</div>
+    </form>
+  </div>
+</div>
+
+{# ---- 削除候補（承認付き削除） ---- #}
+<div class="card border-danger mb-4">
+  <div class="card-header bg-danger-subtle">
+    <strong>削除候補</strong> — 投稿後 {{ hours }}時間経過 かつ インプ {{ threshold }}未満（{{ candidates|length }}件）
+  </div>
+  <div class="card-body">
+    {% if candidates %}
+    <form method="post" action="{{ url_for('sns.cleanup_delete') }}"
+          onsubmit="return confirm('チェックした投稿を削除します。{% if api_delete_available %}X上のツイートが実削除されます（取り消せません）。{% else %}手動削除リンクを表示します。{% endif %}よろしいですか？')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="hours" value="{{ hours }}">
+      <input type="hidden" name="threshold" value="{{ threshold }}">
+      <table class="table table-sm table-hover align-middle mb-3">
+        <thead class="table-light">
+          <tr><th style="width:2rem;"></th><th>投稿日時</th><th>本文</th><th>インプ</th><th>ツイート</th></tr>
+        </thead>
+        <tbody>
+          {% for p in candidates %}
+          <tr>
+            <td><input type="checkbox" name="post_ids" value="{{ p.id }}" class="form-check-input"></td>
+            <td class="small text-nowrap">{{ p.posted_at.strftime('%m/%d %H:%M') if p.posted_at else '-' }}</td>
+            <td class="small" style="max-width:340px;">{{ p.text[:70] }}{% if p.text|length > 70 %}…{% endif %}</td>
+            <td class="small"><span class="badge bg-danger">{{ p.impressions }}</span></td>
+            <td><a href="{{ tweet_url(p.post_id) }}" target="_blank" rel="noopener" class="small">開く ↗</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" class="btn btn-danger btn-sm">
+        {% if api_delete_available %}✓ チェックした投稿を削除する{% else %}✓ 手動削除リンクを表示する{% endif %}
+      </button>
+      <span class="small text-muted ms-2">※ チェックしたものだけが対象です。</span>
+    </form>
+    {% else %}
+    <div class="alert alert-success mb-0 small">条件に該当する低インプ投稿はありません。</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ---- インプ記録（ツイートURL/IDで紐付け） ---- #}
+<div class="card mb-4">
+  <div class="card-header"><strong>インプを記録（ツイートURL / ID で紐付け）</strong></div>
+  <div class="card-body">
+    <p class="small text-muted mb-2">
+      X APIでの個別インプ取得は制約が大きいため、Xアナリティクスの数値を手入力します。
+      ツイートのURL（例: https://x.com/name/status/123…）または投稿ID＋インプ数を入力してください。
+    </p>
+    <form method="post" action="{{ url_for('sns.cleanup_record_impressions') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-6">
+        <label class="form-label small mb-0">ツイートURL または 投稿ID</label>
+        <input type="text" name="url_or_id" class="form-control form-control-sm" placeholder="https://x.com/.../status/123... または 123...">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0">インプレッション数</label>
+        <input type="number" name="impressions" min="0" class="form-control form-control-sm" required>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-sm btn-outline-primary">記録する</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ---- インプ記録（投稿済み一覧から直接） ---- #}
+<div class="card mb-4">
+  <div class="card-header"><strong>投稿済みの X 投稿（インプを行内で記録）</strong></div>
+  <div class="card-body">
+    {% if posted %}
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr><th>投稿日時</th><th>本文</th><th>現在のインプ</th><th>記録</th></tr>
+      </thead>
+      <tbody>
+        {% for p in posted %}
+        <tr>
+          <td class="small text-nowrap">{{ p.posted_at.strftime('%m/%d %H:%M') if p.posted_at else '-' }}</td>
+          <td class="small" style="max-width:300px;">
+            {{ p.text[:55] }}{% if p.text|length > 55 %}…{% endif %}
+            {% if is_tweet_id(p.post_id) %}
+              <a href="{{ tweet_url(p.post_id) }}" target="_blank" rel="noopener" class="small">↗</a>
+            {% else %}
+              <span class="badge bg-light text-muted">手動投稿</span>
+            {% endif %}
+          </td>
+          <td class="small">
+            {% if p.impressions is not none %}
+              <span class="badge {{ 'bg-danger' if p.impressions < threshold else 'bg-secondary' }}">{{ p.impressions }}</span>
+              {% if p.imp_checked_at %}<span class="text-muted">{{ p.imp_checked_at.strftime('%m/%d') }}</span>{% endif %}
+            {% else %}
+              <span class="text-muted">未計測</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('sns.cleanup_record_impressions') }}" class="d-flex gap-1">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="post_pk" value="{{ p.id }}">
+              <input type="hidden" name="hours" value="{{ hours }}">
+              <input type="hidden" name="threshold" value="{{ threshold }}">
+              <input type="number" name="impressions" min="0" class="form-control form-control-sm" style="width:6rem;" placeholder="インプ">
+              <button type="submit" class="btn btn-sm btn-outline-primary">保存</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="alert alert-info mb-0 small">投稿済みの X 投稿がありません。</div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
