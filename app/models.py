@@ -113,6 +113,10 @@ class Draft(db.Model):
     text = db.Column(db.Text, nullable=False)
     reviewed = db.Column(db.Boolean, default=False)
     video_path = db.Column(db.String(500), nullable=True)  # path to generated video file
+    # E6-1: 投稿→オファー導線（CTA）
+    cta_label = db.Column(db.String(120), default="")
+    cta_url = db.Column(db.String(500), default="")
+    offer_lp_id = db.Column(db.Integer, db.ForeignKey("landing_page.id"), nullable=True)
     generated_at = db.Column(db.DateTime, default=datetime.utcnow)
     generated_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     generated_by = db.relationship("User", foreign_keys=[generated_by_user_id])
@@ -187,7 +191,8 @@ class ContactMessage(db.Model):
     email = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(50), default="")
     body = db.Column(db.Text, nullable=False)
-    source = db.Column(db.String(20), default="lp")  # lp / sales_letter
+    source = db.Column(db.String(80), default="lp")  # lp / sales_letter / cta / direct
+    source_detail = db.Column(db.String(200), default="")  # 導線の詳細（例: LP名 / CTAラベル / 流入元）
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -205,8 +210,65 @@ class StripeProduct(db.Model):
     created_by = db.relationship("User", foreign_keys=[created_by_user_id])
 
 
+class Testimonial(db.Model):
+    """社会的証明（お客様の声 / 実績 / ロゴ）。kind別必須はルート側で検証。"""
+    __tablename__ = "testimonial"
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("client.id"), nullable=False, index=True)
+    kind = db.Column(db.String(16), default="voice")  # voice / result / logo
+    author_name = db.Column(db.String(120), nullable=True)
+    author_title = db.Column(db.String(200), nullable=True)
+    quote = db.Column(db.Text, nullable=True)
+    metric_label = db.Column(db.String(120), nullable=True)
+    metric_value = db.Column(db.String(120), nullable=True)
+    image_url = db.Column(db.String(500), nullable=True)
+    logo_url = db.Column(db.String(500), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    client = db.relationship("Client", backref=db.backref("testimonials", lazy="dynamic"))
+
+
 PLATFORMS = ["x", "instagram", "tiktok", "youtube"]
 PLATFORM_LABELS = {"x": "X (Twitter)", "instagram": "Instagram", "tiktok": "TikTok", "youtube": "YouTube"}
+
+# E6-5: 予約投稿の承認ステータス（draft → pending → approved → posted / failed）
+# 自動投稿の対象は approved のみ。draft / pending は絶対に外部送信しない。
+POST_STATUS_DRAFT = "draft"          # 下書き（本人がまだ承認依頼していない）
+POST_STATUS_PENDING = "pending"      # 承認待ち（既定値・後方互換：既存データはここ）
+POST_STATUS_APPROVED = "approved"    # 承認済み（＝自動投稿の対象）
+POST_STATUS_POSTED = "posted"        # 投稿済み
+POST_STATUS_FAILED = "failed"        # 投稿失敗
+POST_STATUS_CANCELLED = "cancelled"  # キャンセル
+
+POST_STATUSES = [
+    POST_STATUS_DRAFT, POST_STATUS_PENDING, POST_STATUS_APPROVED,
+    POST_STATUS_POSTED, POST_STATUS_FAILED, POST_STATUS_CANCELLED,
+]
+
+POST_STATUS_LABELS = {
+    POST_STATUS_DRAFT: "下書き",
+    POST_STATUS_PENDING: "承認待ち",
+    POST_STATUS_APPROVED: "承認済み",
+    POST_STATUS_POSTED: "投稿済み",
+    POST_STATUS_FAILED: "失敗",
+    POST_STATUS_CANCELLED: "キャンセル",
+}
+
+# 許可された状態遷移。ここに無い遷移はルート側で拒否する（承認ゲートの強制）。
+POST_STATUS_TRANSITIONS = {
+    POST_STATUS_DRAFT: {POST_STATUS_PENDING, POST_STATUS_CANCELLED, POST_STATUS_POSTED},
+    POST_STATUS_PENDING: {POST_STATUS_APPROVED, POST_STATUS_DRAFT, POST_STATUS_CANCELLED, POST_STATUS_POSTED},
+    POST_STATUS_APPROVED: {POST_STATUS_PENDING, POST_STATUS_POSTED, POST_STATUS_FAILED, POST_STATUS_CANCELLED},
+    POST_STATUS_FAILED: {POST_STATUS_PENDING, POST_STATUS_CANCELLED, POST_STATUS_POSTED},
+    POST_STATUS_POSTED: set(),
+    POST_STATUS_CANCELLED: {POST_STATUS_PENDING},
+}
+
+
+def can_transition(current, target):
+    """current → target の状態遷移が許可されているか。"""
+    return target in POST_STATUS_TRANSITIONS.get(current or POST_STATUS_PENDING, set())
 
 
 class SnsConnection(db.Model):
@@ -233,11 +295,32 @@ class ScheduledPost(db.Model):
     text = db.Column(db.Text, nullable=False)
     media_path = db.Column(db.String(500), nullable=True)  # local path to video/image
     scheduled_at = db.Column(db.DateTime, nullable=False)
-    status = db.Column(db.String(20), default="pending")  # pending / posted / failed
+    # E6-5: draft / pending / approved / posted / failed / cancelled（POST_STATUSES 参照）
+    status = db.Column(db.String(20), default=POST_STATUS_PENDING)
     post_id = db.Column(db.String(200), nullable=True)     # platform-returned post ID
     error_msg = db.Column(db.Text, nullable=True)
+    # E6-5: 承認ゲート＋人間的ペースの監査用。
+    # approved_at: 承認した時刻（未承認は NULL）
+    # approved_by_user_id: 承認者（誰が通したかを残す）
+    # posted_at: 実際に投稿された時刻（最小投稿間隔の判定に使う。再起動しても効く）
+    approved_at = db.Column(db.DateTime, nullable=True)
+    approved_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    posted_at = db.Column(db.DateTime, nullable=True)
+    # E6-1: 投稿→オファー導線（CTA）。text には合成済み本文が入るが監査用に保持
+    cta_label = db.Column(db.String(120), default="")
+    cta_url = db.Column(db.String(500), default="")
+    offer_lp_id = db.Column(db.Integer, db.ForeignKey("landing_page.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     draft = db.relationship("Draft", foreign_keys=[draft_id])
     created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    approved_by = db.relationship("User", foreign_keys=[approved_by_user_id])
     client = db.relationship("Client", backref=db.backref("scheduled_posts", lazy="dynamic"))
+
+    @property
+    def status_label(self):
+        return POST_STATUS_LABELS.get(self.status, self.status)
+
+    @property
+    def is_approved(self):
+        return self.status == POST_STATUS_APPROVED

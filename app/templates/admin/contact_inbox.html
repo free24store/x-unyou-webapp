@@ -1,12 +1,39 @@
 {% extends "base.html" %}
-{% block title %}お問い合わせ受信ボックス — X yb boost{% endblock %}
+{% block title %}お問い合わせ受信ボックス — YB BOOST{% endblock %}
 {% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
 {% block content %}
+{% set src_labels = {'lp': 'LP', 'sales_letter': 'セールスレター', 'cta': 'CTA', 'direct': '直接'} %}
+{% set src_badge = {'lp': 'bg-primary', 'sales_letter': 'bg-info', 'cta': 'bg-success', 'direct': 'bg-secondary'} %}
 <h2 class="h4 mb-3">📬 お問い合わせ受信ボックス
   {% if unread > 0 %}
   <span class="badge bg-danger ms-2">{{ unread }}</span>
   {% endif %}
 </h2>
+
+{% if source_counts %}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="text-muted small me-1">出所別内訳:</span>
+      {% for src, cnt in source_counts.items() %}
+      <span class="badge {{ src_badge.get(src, 'bg-dark') }}">{{ src_labels.get(src, src) }} {{ cnt }}</span>
+      {% endfor %}
+      <span class="badge bg-light text-dark border">合計 {{ total }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="mb-3 d-flex flex-wrap align-items-center gap-1">
+  <span class="text-muted small me-1">絞り込み:</span>
+  <a href="{{ url_for('admin.contact_inbox') }}"
+     class="btn btn-sm {{ 'btn-dark' if not active_src else 'btn-outline-dark' }}">すべて</a>
+  {% for src, cnt in source_counts.items() %}
+  <a href="{{ url_for('admin.contact_inbox', src=src) }}"
+     class="btn btn-sm {{ 'btn-dark' if active_src == src else 'btn-outline-dark' }}">
+    {{ src_labels.get(src, src) }}（{{ cnt }}）</a>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if messages %}
 <div class="table-responsive">
@@ -31,7 +58,13 @@
         <td><a href="mailto:{{ msg.email }}">{{ msg.email }}</a></td>
         <td>{{ msg.phone or '—' }}</td>
         <td>{{ msg.body[:50] }}{% if msg.body|length > 50 %}…{% endif %}</td>
-        <td><span class="badge bg-secondary">{{ msg.source }}</span></td>
+        {% set msrc = (msg.source or 'direct') %}
+        <td>
+          <span class="badge {{ src_badge.get(msrc, 'bg-dark') }}">{{ src_labels.get(msrc, msrc) }}</span>
+          {% if msg.source_detail %}
+          <div class="small text-muted mt-1">{{ msg.source_detail }}</div>
+          {% endif %}
+        </td>
         <td class="small text-muted">{{ msg.created_at.strftime('%m/%d %H:%M') }}</td>
         <td>
           {% if not msg.is_read %}

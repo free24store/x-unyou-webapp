@@ -5,6 +5,7 @@
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.calendar' %}active fw-bold{% endif %}" href="{{ url_for('admin.calendar') }}">📅 投稿カレンダー</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.drafts' %}active fw-bold{% endif %}" href="{{ url_for('admin.drafts') }}">📝 投稿文を作る</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.metrics_log' %}active fw-bold{% endif %}" href="{{ url_for('admin.metrics_log') }}">📊 数値を記録する</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.metrics_import' %}active fw-bold{% endif %}" href="{{ url_for('admin.metrics_import') }}">📊 メトリクス取込</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.users','admin.user_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.users') }}">👥 メンバー管理</a></li>
 
     <li class="nav-item mt-2"><span class="nav-link text-muted small px-3 py-1">X 連携</span></li>
@@ -13,10 +14,12 @@
 
     <li class="nav-item mt-2"><span class="nav-link text-muted small px-3 py-1">X 自動投稿</span></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.story_campaign_list','admin.story_campaign_new','admin.story_campaign_detail','admin.campaign_post_edit') %}active fw-bold{% endif %}" href="{{ url_for('admin.story_campaign_list') }}">📖 ストーリーキャンペーン</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'sns.video_studio' %}active fw-bold{% endif %}" href="{{ url_for('sns.video_studio') }}">🎬 動画スタジオ</a></li>
 
     <li class="nav-item mt-2"><span class="nav-link text-muted small px-3 py-1">集客・セールス</span></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.lp_list','admin.lp_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.lp_list') }}">🌐 LP管理</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.sl_list','admin.sl_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.sl_list') }}">💰 セールスレター</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.testimonial_list','admin.testimonial_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.testimonial_list') }}">🗣 社会的証明</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.line_steps_list','admin.line_steps_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.line_steps_list') }}">📱 LINEステップ</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.contact_inbox' %}active fw-bold{% endif %}" href="{{ url_for('admin.contact_inbox') }}">📬 お問い合わせ</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.stripe_products','admin.stripe_product_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.stripe_products') }}">💳 Stripe決済</a></li>

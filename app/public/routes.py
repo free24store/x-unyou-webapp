@@ -8,7 +8,7 @@ from flask import render_template, request, redirect, url_for, flash, abort
 
 from . import bp
 from ..extensions import db
-from ..models import LandingPage, SalesLetter, ContactMessage, Client
+from ..models import LandingPage, SalesLetter, ContactMessage, Client, Testimonial
 
 
 def _send_contact_email(client, msg_obj):
@@ -50,7 +50,11 @@ def lp_view(client_id):
             .filter_by(client_id=client_id, is_published=True)
             .order_by(LandingPage.created_at.desc())
             .first_or_404())
-    return render_template("public/lp.html", page=page)
+    testimonials = (Testimonial.query
+                    .filter_by(client_id=page.client_id, is_active=True)
+                    .order_by(Testimonial.sort_order, Testimonial.id)
+                    .all())
+    return render_template("public/lp.html", page=page, testimonials=testimonials)
 
 
 @bp.route("/sl/<int:client_id>", methods=["GET", "POST"])
@@ -82,7 +86,12 @@ def sl_view(client_id):
         flash("お問い合わせを受け付けました。近日中にご連絡いたします。", "success")
         return redirect(url_for("public.sl_view", client_id=client_id))
 
-    return render_template("public/sales_letter.html", letter=letter, client=client)
+    testimonials = (Testimonial.query
+                    .filter_by(client_id=letter.client_id, is_active=True)
+                    .order_by(Testimonial.sort_order, Testimonial.id)
+                    .all())
+    return render_template("public/sales_letter.html", letter=letter, client=client,
+                           testimonials=testimonials)
 
 
 @bp.route("/contact/<int:client_id>", methods=["GET", "POST"])
@@ -96,18 +105,29 @@ def contact_view(client_id):
             flash("お名前とメールアドレスは必須です。", "danger")
             return redirect(url_for("public.contact_view", client_id=client_id))
 
+        # 導線トラッキング: hidden入力の source / source_detail を採用。
+        # 無指定は "direct"（直接流入）として扱う。
+        source = (request.form.get("source", "").strip() or "direct")[:80]
+        source_detail = request.form.get("source_detail", "").strip()[:200]
+
         msg_obj = ContactMessage(
             client_id=client_id,
             name=name,
             email=email,
             phone=request.form.get("phone", "").strip(),
             body=request.form.get("body", "").strip(),
-            source="lp",
+            source=source,
+            source_detail=source_detail,
         )
         db.session.add(msg_obj)
         db.session.commit()
         _send_contact_email(client, msg_obj)
         flash("お問い合わせを受け付けました。近日中にご連絡いたします。", "success")
-        return redirect(url_for("public.contact_view", client_id=client_id))
+        return redirect(url_for("public.contact_view", client_id=client_id,
+                                src=source, src_detail=source_detail))
 
-    return render_template("public/contact.html", client=client)
+    # GET: クエリ ?src=... / ?src_detail=... を hidden input へ反映して計測。
+    source = (request.args.get("src", "").strip() or "direct")[:80]
+    source_detail = request.args.get("src_detail", "").strip()[:200]
+    return render_template("public/contact.html", client=client,
+                           source=source, source_detail=source_detail)

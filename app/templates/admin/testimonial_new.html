@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}社会的証明を追加 — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">➕ 社会的証明を追加</h2>
+  <a href="{{ url_for('admin.testimonial_list') }}" class="btn btn-outline-secondary btn-sm">← 一覧へ戻る</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 種別（kind）によって必要な項目が変わります。下で種別を選ぶと、必須項目がハイライトされます。<br>
+  <span class="small">
+    <strong>voice（お客様の声）</strong>→ 引用文が必須／
+    <strong>result（実績）</strong>→ 指標ラベル＋数値が必須／
+    <strong>logo（ロゴ）</strong>→ ロゴURLが必須
+  </span>
+</div>
+
+<form method="POST" class="card card-body shadow-sm" style="max-width:640px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="mb-3">
+    <label class="form-label fw-bold">種別 (kind)</label>
+    <select name="kind" id="kindSelect" class="form-select">
+      {% for k in kinds %}
+      <option value="{{ k }}" {{ 'selected' if form and form.kind == k else '' }}>{{ k }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {# voice 用 #}
+  <div class="js-kind js-kind-voice">
+    <div class="mb-3">
+      <label class="form-label">投稿者名 (author_name)</label>
+      <input type="text" name="author_name" class="form-control" value="{{ form.author_name if form else '' }}" placeholder="例：田中 太郎">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">肩書き (author_title)</label>
+      <input type="text" name="author_title" class="form-control" value="{{ form.author_title if form else '' }}" placeholder="例：株式会社◯◯ 代表">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">引用文 (quote) <span class="badge bg-danger js-req-voice">voiceで必須</span></label>
+      <textarea name="quote" class="form-control" rows="3" placeholder="お客様からいただいた声をそのまま入力">{{ form.quote if form else '' }}</textarea>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">画像URL (image_url) <span class="text-muted small">※任意・丸アイコンで表示</span></label>
+      <input type="text" name="image_url" class="form-control" value="{{ form.image_url if form else '' }}" placeholder="https://...">
+    </div>
+  </div>
+
+  {# result 用 #}
+  <div class="js-kind js-kind-result">
+    <div class="row">
+      <div class="col mb-3">
+        <label class="form-label">指標ラベル (metric_label) <span class="badge bg-danger js-req-result">resultで必須</span></label>
+        <input type="text" name="metric_label" class="form-control" value="{{ form.metric_label if form else '' }}" placeholder="例：フォロワー増加">
+      </div>
+      <div class="col mb-3">
+        <label class="form-label">数値 (metric_value) <span class="badge bg-danger js-req-result">resultで必須</span></label>
+        <input type="text" name="metric_value" class="form-control" value="{{ form.metric_value if form else '' }}" placeholder="例：+5,000">
+      </div>
+    </div>
+  </div>
+
+  {# logo 用 #}
+  <div class="js-kind js-kind-logo">
+    <div class="mb-3">
+      <label class="form-label">ロゴURL (logo_url) <span class="badge bg-danger js-req-logo">logoで必須</span></label>
+      <input type="text" name="logo_url" class="form-control" value="{{ form.logo_url if form else '' }}" placeholder="https://.../logo.png">
+      <div class="form-text">alt には肩書き (author_title) が使われます。</div>
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">並び順 (sort_order) <span class="text-muted small">※小さいほど上に表示</span></label>
+    <input type="number" name="sort_order" class="form-control" value="{{ form.sort_order if form else 0 }}" style="max-width:8rem">
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('admin.testimonial_list') }}" class="btn btn-outline-secondary">キャンセル</a>
+  </div>
+</form>
+
+<script>
+  (function () {
+    var sel = document.getElementById('kindSelect');
+    var groups = document.querySelectorAll('.js-kind');
+    function refresh() {
+      var kind = sel.value;
+      groups.forEach(function (g) {
+        var on = g.classList.contains('js-kind-' + kind);
+        // 全項目は送信するため隠すだけ（必須のみ強調）
+        g.style.opacity = on ? '1' : '0.45';
+      });
+    }
+    sel.addEventListener('change', refresh);
+    refresh();
+  })();
+</script>
+{% endblock %}

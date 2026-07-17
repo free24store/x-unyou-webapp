@@ -127,6 +127,84 @@
 </div>
 {% endif %}
 
+{# ─── 客層フィット可視化（リーチ指標 / 見込み客・成約指標）─── #}
+<div class="alert alert-danger d-flex align-items-start gap-2 mb-3">
+  <span class="fs-5">⚠️</span>
+  <div class="small mb-0">
+    <strong>取り違え注意:</strong> {{ fit_warning }}
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  {# リーチ指標グループ #}
+  <div class="col-lg-6">
+    <div class="card h-100 border-primary">
+      <div class="card-header bg-primary bg-opacity-10 fw-bold">
+        📣 リーチ指標（認知の広さ）
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-3">どれだけ多くの人に届いたか。フォロワーや表示など「知ってもらう」ための指標です。</p>
+        <div class="row g-2">
+          {% for m in reach_metrics %}
+          <div class="col-6">
+            <div class="border rounded p-2 h-100">
+              <div class="small text-muted">{{ m.emoji }} {{ m.label }}</div>
+              {% if m.value is not none %}
+              <div class="fs-5 fw-bold">{{ m.value | round(1) }}<span class="small text-muted fw-normal"> {{ m.unit }}</span></div>
+              {% else %}
+              <div class="fs-6 fw-bold text-muted">観測待ち</div>
+              {% endif %}
+              <div class="text-muted" style="font-size:0.72rem;">{{ m.hint }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="alert alert-primary p-2 mt-3 small mb-0">
+          💡 Point: リーチが伸びても「買う人」に届いていなければ売上にはつながりません。次の見込み客指標とセットで見ましょう。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# 見込み客/成約指標グループ #}
+  <div class="col-lg-6">
+    <div class="card h-100 border-success">
+      <div class="card-header bg-success bg-opacity-10 fw-bold">
+        🎯 見込み客 / 成約指標（収益に近い）
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-3">実際に相談・購入してくれる見込み客の動き。売上に直結する「深さ」の指標です。</p>
+        <div class="row g-2">
+          {% for m in prospect_metrics %}
+          <div class="col-6">
+            <div class="border rounded p-2 h-100">
+              <div class="small text-muted">{{ m.emoji }} {{ m.label }}</div>
+              {% if m.value is not none %}
+              <div class="fs-5 fw-bold">{{ m.value | round(1) }}<span class="small text-muted fw-normal"> {{ m.unit }}</span></div>
+              {% else %}
+              <div class="fs-6 fw-bold text-muted">観測待ち</div>
+              {% endif %}
+              <div class="text-muted" style="font-size:0.72rem;">{{ m.hint }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="alert alert-success p-2 mt-3 small mb-0">
+          💡 Point: ここが動いていれば、リーチが小さくても収益化は進みます。「買う見込み客」に届いている証拠です。
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% if not has_metrics %}
+<div class="alert alert-info small mb-4">
+  📋 指標がまだ記録されていません。数値部分は「観測待ち」と表示しています。指標ログから記録すると自動で反映されます。
+</div>
+{% endif %}
+
 {# ─── 運用状況（フェーズ・診断）─── #}
 <div class="accordion mb-3" id="guideAccordion">
   <div class="accordion-item border-info">

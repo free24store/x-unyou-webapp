@@ -1,0 +1,81 @@
+{#
+  E6-1: 投稿→オファー導線（CTA）ブロック
+  各生成フォーム / 予約投稿フォームに {% include %} して使う共通パーツ。
+  送信フィールド:
+    - offer_lp_id : 内部LP選択時（それ以外は空）
+    - cta_url     : セールスレター/Stripe商品/自由URL の遷移先（LP選択時は空）
+    - cta_label   : CTAの文言（任意）
+  プリフィル（任意）: cta_prefill_label / cta_prefill_url / cta_prefill_lp_id
+  候補変数: cta_lps / cta_letters / cta_products
+  JSは各ページの scripts ブロックで initCtaBlocks() を1回呼ぶ。
+#}
+<div class="cta-block border rounded p-3 mt-3 mb-1"
+     style="background:#fafbfc"
+     data-prefill-url="{{ cta_prefill_url|default('') }}"
+     data-prefill-lp="{{ cta_prefill_lp_id|default('') or '' }}">
+  <div class="fw-bold mb-2">🎯 オファー導線（CTA）<span class="text-muted small fw-normal ms-1">任意</span></div>
+  <div class="alert alert-warning small d-flex gap-2 py-2 mb-3">
+    <span>💡 Point:</span>
+    <span>伸びた投稿にこそオファー導線を。CTAが無いと、せっかくの集客が売上に繋がりません。</span>
+  </div>
+
+  <div class="row g-2">
+    <div class="col-12 col-sm-5">
+      <label class="form-label small mb-1">リンク先の種類</label>
+      <select class="form-select form-select-sm cta-kind">
+        <option value="">— 設定しない —</option>
+        <option value="lp">内部LP</option>
+        <option value="letter">内部セールスレター</option>
+        <option value="product">Stripe商品</option>
+        <option value="url">自由URL</option>
+      </select>
+    </div>
+    <div class="col-12 col-sm-7">
+      <label class="form-label small mb-1">リンク先</label>
+
+      {# 内部LP: offer_lp_id を送信 #}
+      <select name="offer_lp_id" class="form-select form-select-sm cta-pane cta-lp" data-kind="lp" style="display:none">
+        <option value="">公開中のLPを選択…</option>
+        {% for lp in cta_lps %}
+        <option value="{{ lp.id }}">{{ lp.title or '（無題のLP）' }}</option>
+        {% endfor %}
+      </select>
+
+      {# 内部セールスレター: 公開URLを cta_url へ #}
+      <select class="form-select form-select-sm cta-pane cta-letter" data-kind="letter" style="display:none">
+        <option value="">公開中のセールスレターを選択…</option>
+        {% for sl in cta_letters %}
+        <option value="{{ url_for('public.sl_view', client_id=sl.client_id) }}">{{ sl.title or sl.product_name or '（無題）' }}</option>
+        {% endfor %}
+      </select>
+
+      {# Stripe商品: 決済リンクを cta_url へ #}
+      <select class="form-select form-select-sm cta-pane cta-product" data-kind="product" style="display:none">
+        <option value="">Stripe商品を選択…</option>
+        {% for p in cta_products %}
+        <option value="{{ p.payment_link_url }}">{{ p.product_name }}（¥{{ '{:,}'.format(p.price_jpy or 0) }}）</option>
+        {% endfor %}
+      </select>
+
+      {# 自由URL #}
+      <input type="url" class="form-control form-control-sm cta-pane cta-freeurl" data-kind="url"
+             style="display:none" placeholder="https://example.com/offer">
+
+      <div class="form-text cta-hint">「設定しない」のままならCTAは付きません（任意）。</div>
+    </div>
+  </div>
+
+  {# 実際に送信される cta_url（LP選択時は空にする） #}
+  <input type="hidden" name="cta_url" class="cta-url" value="{{ cta_prefill_url|default('') }}">
+
+  <div class="mt-2">
+    <label class="form-label small mb-1">CTA文言（任意）</label>
+    <input type="text" name="cta_label" class="form-control form-control-sm cta-label"
+           value="{{ cta_prefill_label|default('') }}" placeholder="例：無料相談はこちら 👇">
+  </div>
+
+  <div class="mt-2 small cta-preview-wrap" style="display:none">
+    <div class="text-muted mb-1">プレビュー（本文の末尾に付きます）:</div>
+    <div class="bg-white border rounded px-2 py-1 text-primary cta-preview" style="white-space:pre-wrap"></div>
+  </div>
+</div>

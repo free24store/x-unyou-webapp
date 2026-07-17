@@ -7,6 +7,12 @@
 </div>
 <h4 class="mb-4">予約投稿を作成</h4>
 
+<div class="alert alert-warning small">
+  <strong>⚠ 承認しないと投稿されません。</strong>
+  作成した予約投稿は「<strong>承認待ち</strong>」で保存されます。
+  <a href="{{ url_for('sns.schedule_list') }}" class="alert-link">予約投稿一覧</a>で内容を確認して「承認」を押すと、予約時刻に自動投稿されます（1回1件・前回投稿から一定時間をあけた人間的なペースで送信）。
+</div>
+
 {% if not connections %}
 <div class="alert alert-warning">
   SNS連携が設定されていません。<a href="{{ url_for('sns.settings') }}">SNS設定</a>からAPIキーを登録してください。
@@ -67,6 +73,11 @@
         <div class="form-text">動画がまだ生成されていない場合は自動生成します。数秒かかります。</div>
       </div>
 
+      <!-- オファー導線（CTA） -->
+      {% with cta_prefill_label=pre_cta_label, cta_prefill_url=pre_cta_url, cta_prefill_lp_id=pre_offer_lp_id %}
+      {% include "partials/_cta_block.html" %}
+      {% endwith %}
+
       <!-- 予約日時 -->
       <div class="mb-4">
         <label class="form-label">予約日時（JST） <span class="text-danger">*</span></label>
@@ -87,10 +98,95 @@
 
 {% block scripts %}
 <script>
-// ドラフト選択 → テキスト自動入力
+// === E6-1: オファー導線（CTA）ブロック共通制御 ===
+function wireCtaBlock(block) {
+  const kind = block.querySelector('.cta-kind');
+  const panes = block.querySelectorAll('.cta-pane');
+  const lpSel = block.querySelector('.cta-lp');       // name=offer_lp_id
+  const letterSel = block.querySelector('.cta-letter');
+  const productSel = block.querySelector('.cta-product');
+  const freeUrl = block.querySelector('.cta-freeurl');
+  const hiddenUrl = block.querySelector('.cta-url');   // name=cta_url
+  const label = block.querySelector('.cta-label');
+  const previewWrap = block.querySelector('.cta-preview-wrap');
+  const preview = block.querySelector('.cta-preview');
+
+  function syncUrl() {
+    const k = kind.value;
+    let url = '';
+    if (k === 'lp') {
+      hiddenUrl.value = '';
+    } else {
+      if (lpSel) lpSel.value = '';
+      if (k === 'letter') url = letterSel ? letterSel.value : '';
+      else if (k === 'product') url = productSel ? productSel.value : '';
+      else if (k === 'url') url = freeUrl ? freeUrl.value.trim() : '';
+      hiddenUrl.value = url;
+    }
+    updatePreview();
+  }
+
+  function updatePreview() {
+    const k = kind.value;
+    const lab = (label.value || '').trim();
+    let shown = '';
+    if (k === 'lp') {
+      const t = lpSel && lpSel.selectedOptions[0] ? lpSel.selectedOptions[0].textContent.trim() : '';
+      if (lpSel && lpSel.value) shown = (lab ? lab + ' ' : '') + '→ ' + t + '（公開LP）';
+    } else if (hiddenUrl.value) {
+      shown = (lab ? lab + ' ' : '') + hiddenUrl.value;
+    }
+    if (shown) { preview.textContent = shown; previewWrap.style.display = ''; }
+    else { previewWrap.style.display = 'none'; }
+  }
+
+  function showPane() {
+    const k = kind.value;
+    panes.forEach(p => { p.style.display = (p.dataset.kind === k) ? '' : 'none'; });
+    syncUrl();
+  }
+
+  kind.addEventListener('change', showPane);
+  if (lpSel) lpSel.addEventListener('change', updatePreview);
+  if (letterSel) letterSel.addEventListener('change', syncUrl);
+  if (productSel) productSel.addEventListener('change', syncUrl);
+  if (freeUrl) freeUrl.addEventListener('input', syncUrl);
+  label.addEventListener('input', updatePreview);
+
+  block.applyCta = function(lpId, url, lab) {
+    label.value = lab || '';
+    if (lpId) {
+      kind.value = 'lp';
+      if (lpSel) lpSel.value = String(lpId);
+    } else if (url) {
+      kind.value = 'url';
+      if (freeUrl) freeUrl.value = url;
+    } else {
+      kind.value = '';
+      if (freeUrl) freeUrl.value = '';
+      if (lpSel) lpSel.value = '';
+    }
+    showPane();
+  };
+
+  const pLp = block.dataset.prefillLp;
+  const pUrl = block.dataset.prefillUrl;
+  if (pLp || pUrl) { block.applyCta(pLp, pUrl, label.value); }
+  else { showPane(); }
+}
+function initCtaBlocks() {
+  document.querySelectorAll('.cta-block').forEach(wireCtaBlock);
+}
+
+// ドラフト選択 → テキスト & CTA 自動入力
 const drafts = {
   {% for d in drafts %}
   "{{ d.id }}": {{ d.text | tojson }},
+  {% endfor %}
+};
+const draftCta = {
+  {% for d in drafts %}
+  "{{ d.id }}": {"lp": {{ d.offer_lp_id | tojson }}, "url": {{ (d.cta_url or '') | tojson }}, "label": {{ (d.cta_label or '') | tojson }}},
   {% endfor %}
 };
 const draftSelect = document.getElementById('draft_select');
@@ -105,9 +201,16 @@ draftSelect.addEventListener('change', function() {
   const text = drafts[this.value];
   if (text) postText.value = text;
   updateCount();
+  const cta = draftCta[this.value];
+  const block = document.querySelector('.cta-block');
+  if (cta && block && block.applyCta) block.applyCta(cta.lp, cta.url, cta.label);
 });
 
 postText.addEventListener('input', updateCount);
-updateCount();
+
+document.addEventListener('DOMContentLoaded', function() {
+  initCtaBlocks();
+  updateCount();
+});
 </script>
 {% endblock %}

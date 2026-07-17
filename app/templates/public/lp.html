@@ -18,7 +18,18 @@
   {% endfor %}
 {% endwith %}
 
-{{ page.body_html | safe }}
+{# body_html 内の <!--SOCIAL_PROOF--> マーカーを社会的証明パーシャルに差し替える。
+   マーカーが無い既存body_htmlでも、testimonialsがあればフッタ直前に追加。 #}
+{% set _sp_marker = '<!--SOCIAL_PROOF-->' %}
+{% if _sp_marker in page.body_html %}
+  {% set _sp_parts = page.body_html.split(_sp_marker) %}
+  {{ _sp_parts[0] | safe }}
+  {% include "public/_social_proof.html" %}
+  {{ _sp_parts[1:] | join(_sp_marker) | safe }}
+{% else %}
+  {{ page.body_html | safe }}
+  {% if testimonials %}{% include "public/_social_proof.html" %}{% endif %}
+{% endif %}
 
 <footer class="text-center py-4 text-muted small bg-dark text-light">
   <p class="mb-0">&copy; {{ page.created_at.year }} All rights reserved.</p>

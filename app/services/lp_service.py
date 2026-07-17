@@ -71,14 +71,8 @@ def generate_lp_html(profile, line_url: str) -> str:
         f"発信テーマ：{genre}、方法：{how}",
         fallback=solution_template
     )
-    voice1 = _ai_enhance(
-        f"{genre}サービスの顧客の声を1件、イニシャル（例：Aさん・30代）で60字以内で。",
-        fallback=f"始めて3ヶ月でフォロワーが500人増えました！（Aさん・30代）"
-    )
-    voice2 = _ai_enhance(
-        f"{genre}サービスの別の顧客の声を1件、別の年代・職業で60字以内で。",
-        fallback=f"投稿の方向性が定まり、毎日迷わず発信できるようになりました。（Bさん・40代・主婦）"
-    )
+    # 「お客様の声」は Testimonial マネージャ（社会的証明）から差し込むため、
+    # ここでは <!--SOCIAL_PROOF--> マーカーのみ出力する（voice1/voice2 は廃止）。
     faq1a = _ai_enhance(
         f"「{genre}初心者でも大丈夫ですか？」への回答を40字以内で安心感ある文体で。",
         fallback="はい、全くの初心者でも丁寧にサポートします。まずはお気軽にご相談ください。"
@@ -132,21 +126,7 @@ def generate_lp_html(profile, line_url: str) -> str:
   </div>
 </section>
 
-<section class="py-5 bg-white">
-  <div class="container" style="max-width:720px">
-    <h2 class="h3 text-center mb-4">お客様の声</h2>
-    <div class="card mb-3 shadow-sm border-0">
-      <div class="card-body">
-        <p class="mb-0 fst-italic">「{voice1}」</p>
-      </div>
-    </div>
-    <div class="card shadow-sm border-0">
-      <div class="card-body">
-        <p class="mb-0 fst-italic">「{voice2}」</p>
-      </div>
-    </div>
-  </div>
-</section>
+<!--SOCIAL_PROOF-->
 
 <section class="py-5 bg-light">
   <div class="container" style="max-width:720px">
@@ -278,6 +258,8 @@ def generate_sales_letter_html(profile, product_name: str, price_jpy: int,
     <ul class="list-group list-group-flush">{benefit_items}</ul>
   </div>
 </section>
+
+<!--SOCIAL_PROOF-->
 
 <section class="py-5 text-center" style="background:#fff9f0">
   <div class="container" style="max-width:640px">

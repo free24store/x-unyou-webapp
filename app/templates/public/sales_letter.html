@@ -19,7 +19,18 @@
 
 {# セールスレター本体はHTMLで格納されているが、フォームのaction属性だけ差し込む #}
 {% set body = letter.body_html | replace('action=""', 'action="' + url_for('public.sl_view', client_id=letter.client_id) + '"') %}
-{{ body | safe }}
+{# body内の <!--SOCIAL_PROOF--> マーカー（offerと申込の間）を社会的証明パーシャルに差し替える。
+   マーカーが無ければ、testimonialsがあるとき申込直前（フッタ前）に追加。 #}
+{% set _sp_marker = '<!--SOCIAL_PROOF-->' %}
+{% if _sp_marker in body %}
+  {% set _sp_parts = body.split(_sp_marker) %}
+  {{ _sp_parts[0] | safe }}
+  {% include "public/_social_proof.html" %}
+  {{ _sp_parts[1:] | join(_sp_marker) | safe }}
+{% else %}
+  {{ body | safe }}
+  {% if testimonials %}{% include "public/_social_proof.html" %}{% endif %}
+{% endif %}
 
 <footer class="text-center py-4 text-muted small bg-dark text-light">
   <p class="mb-0">&copy; {{ letter.created_at.year }} All rights reserved.</p>

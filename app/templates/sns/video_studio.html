@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}動画スタジオ — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">🎬 動画スタジオ（ブラウザ生成）</h2>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 動画づくりは<strong>あなたのブラウザの中だけ</strong>で完結します。Renderサーバに負荷をかけず、APIキーも不要。
+  スライドの文字を入れて「動画を書き出す」を押すだけで、投稿できるショート動画（webm）が手に入ります。
+</div>
+
+<div class="row g-4">
+  <!-- 左：入力フォーム -->
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>📝 スライドを作る</strong>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="addSlideBtn">＋ スライドを追加</button>
+      </div>
+      <div class="card-body">
+        <div id="slides"><!-- スライドはJSで描画 --></div>
+
+        <hr>
+        <div class="row g-3 align-items-end">
+          <div class="col-6 col-md-4">
+            <label class="form-label small mb-1">🎨 背景色</label>
+            <input type="color" class="form-control form-control-color w-100" id="bgColor" value="#111827">
+          </div>
+          <div class="col-6 col-md-4">
+            <label class="form-label small mb-1">🅰️ 文字色</label>
+            <input type="color" class="form-control form-control-color w-100" id="textColor" value="#ffffff">
+          </div>
+          <div class="col-6 col-md-4">
+            <label class="form-label small mb-1">⏱ 1枚あたりの秒数</label>
+            <input type="number" class="form-control" id="secPerSlide" value="3" min="1" max="15" step="0.5">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 mt-3 flex-wrap">
+      <button type="button" class="btn btn-outline-secondary" id="previewBtn">▶️ プレビュー再生</button>
+      <button type="button" class="btn btn-primary" id="exportBtn">🎥 動画を書き出す</button>
+    </div>
+    <div id="statusMsg" class="small text-muted mt-2"></div>
+
+    <div id="unsupported" class="alert alert-warning mt-3 d-none">
+      ⚠️ このブラウザは動画の録画（MediaRecorder）に対応していないようです。<br>
+      最新の <strong>Chrome / Edge / Firefox</strong> でお試しください。プレビュー再生は動作します。
+    </div>
+  </div>
+
+  <!-- 右：プレビュー -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><strong>📺 プレビュー</strong></div>
+      <div class="card-body text-center bg-light">
+        <canvas id="stage" width="540" height="960"
+                style="width:100%; max-width:270px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,.15);"></canvas>
+      </div>
+      <div class="card-footer small text-muted">
+        縦型 9:16（540×960）。書き出したwebmは X / TikTok / YouTube ショートにそのまま投稿できます。
+      </div>
+    </div>
+    <div id="resultBox" class="mt-3 d-none">
+      <video id="resultVideo" controls class="w-100 rounded" style="max-width:270px; display:block; margin:0 auto;"></video>
+      <div class="text-center mt-2">
+        <a id="downloadLink" class="btn btn-success btn-sm" download="yb-boost-slide.webm">⬇️ 動画をダウンロード</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-light border mt-4 small">
+  <strong>使い方（3ステップ）</strong>
+  <ol class="mb-0 mt-1">
+    <li>スライドにタイトルと本文を入力（＋で複数枚に）。</li>
+    <li>「▶️ プレビュー再生」で仕上がりを確認。</li>
+    <li>「🎥 動画を書き出す」→ ダウンロードして各SNSに投稿。</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  var W = 540, H = 960;
+  var canvas = document.getElementById("stage");
+  var ctx = canvas.getContext("2d");
+  var slidesEl = document.getElementById("slides");
+  var statusMsg = document.getElementById("statusMsg");
+
+  // ---- スライド状態 ----
+  var slides = [
+    { title: "YB BOOST", body: "ここに本文を入力しよう" }
+  ];
+
+  function renderSlideInputs() {
+    slidesEl.innerHTML = "";
+    slides.forEach(function (s, i) {
+      var wrap = document.createElement("div");
+      wrap.className = "border rounded p-2 mb-2 bg-white";
+      wrap.innerHTML =
+        '<div class="d-flex justify-content-between align-items-center mb-1">' +
+          '<span class="badge bg-secondary">スライド ' + (i + 1) + '</span>' +
+          '<button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-del="' + i + '">削除</button>' +
+        '</div>' +
+        '<input type="text" class="form-control form-control-sm mb-1" placeholder="タイトル" data-field="title" data-idx="' + i + '">' +
+        '<textarea class="form-control form-control-sm" rows="2" placeholder="本文" data-field="body" data-idx="' + i + '"></textarea>';
+      slidesEl.appendChild(wrap);
+      wrap.querySelector('[data-field="title"]').value = s.title;
+      wrap.querySelector('[data-field="body"]').value = s.body;
+    });
+    // 削除ボタンは最低1枚残す
+    var delBtns = slidesEl.querySelectorAll("[data-del]");
+    delBtns.forEach(function (b) {
+      b.disabled = slides.length <= 1;
+    });
+    drawSlide(0);
+  }
+
+  slidesEl.addEventListener("input", function (e) {
+    var t = e.target;
+    var idx = t.getAttribute("data-idx");
+    var field = t.getAttribute("data-field");
+    if (idx !== null && field) {
+      slides[+idx][field] = t.value;
+      drawSlide(+idx);
+    }
+  });
+
+  slidesEl.addEventListener("click", function (e) {
+    var del = e.target.getAttribute("data-del");
+    if (del !== null && slides.length > 1) {
+      slides.splice(+del, 1);
+      renderSlideInputs();
+    }
+  });
+
+  document.getElementById("addSlideBtn").addEventListener("click", function () {
+    slides.push({ title: "新しいスライド", body: "" });
+    renderSlideInputs();
+  });
+
+  // ---- Canvas 描画 ----
+  function wrapText(text, maxWidth, font) {
+    ctx.font = font;
+    var lines = [];
+    (text || "").split("\n").forEach(function (para) {
+      if (para === "") { lines.push(""); return; }
+      var line = "";
+      // 日本語は単語区切りが無いので1文字ずつ折り返し
+      for (var i = 0; i < para.length; i++) {
+        var test = line + para[i];
+        if (ctx.measureText(test).width > maxWidth && line !== "") {
+          lines.push(line);
+          line = para[i];
+        } else {
+          line = test;
+        }
+      }
+      lines.push(line);
+    });
+    return lines;
+  }
+
+  function drawSlide(i) {
+    var s = slides[i] || { title: "", body: "" };
+    var bg = document.getElementById("bgColor").value;
+    var fg = document.getElementById("textColor").value;
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = fg;
+
+    // タイトル
+    var titleFont = "bold 52px 'Hiragino Sans','Noto Sans JP',sans-serif";
+    var titleLines = wrapText(s.title, W - 80, titleFont);
+    ctx.font = titleFont;
+    var ty = 260;
+    titleLines.forEach(function (ln) {
+      ctx.fillText(ln, W / 2, ty);
+      ty += 62;
+    });
+
+    // 区切り線
+    ctx.strokeStyle = fg;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 60, ty + 10);
+    ctx.lineTo(W / 2 + 60, ty + 10);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // 本文
+    var bodyFont = "34px 'Hiragino Sans','Noto Sans JP',sans-serif";
+    var bodyLines = wrapText(s.body, W - 100, bodyFont);
+    ctx.font = bodyFont;
+    var by = ty + 90;
+    bodyLines.forEach(function (ln) {
+      ctx.fillText(ln, W / 2, by);
+      by += 46;
+    });
+
+    // フッター
+    ctx.font = "22px 'Hiragino Sans','Noto Sans JP',sans-serif";
+    ctx.globalAlpha = 0.6;
+    ctx.fillText("YB BOOST", W / 2, H - 60);
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- プレビュー再生（描画のみ・録画なし） ----
+  var playing = false;
+  function playPreview() {
+    if (playing) return;
+    playing = true;
+    var sec = Math.max(0.5, parseFloat(document.getElementById("secPerSlide").value) || 3);
+    var i = 0;
+    statusMsg.textContent = "▶️ プレビュー再生中…";
+    function step() {
+      if (i >= slides.length) {
+        playing = false;
+        statusMsg.textContent = "プレビュー終了。";
+        drawSlide(0);
+        return;
+      }
+      drawSlide(i);
+      i++;
+      setTimeout(step, sec * 1000);
+    }
+    step();
+  }
+  document.getElementById("previewBtn").addEventListener("click", playPreview);
+
+  // ---- 動画書き出し（Canvas → MediaRecorder → webm） ----
+  function pickMimeType() {
+    if (typeof MediaRecorder === "undefined") return null;
+    var candidates = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    for (var i = 0; i < candidates.length; i++) {
+      if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+    return null;
+  }
+
+  function exportVideo() {
+    var mime = pickMimeType();
+    if (!canvas.captureStream || !mime) {
+      document.getElementById("unsupported").classList.remove("d-none");
+      statusMsg.textContent = "";
+      return;
+    }
+    var exportBtn = document.getElementById("exportBtn");
+    exportBtn.disabled = true;
+    statusMsg.textContent = "🎥 録画中… そのままお待ちください。";
+
+    var sec = Math.max(0.5, parseFloat(document.getElementById("secPerSlide").value) || 3);
+    var stream = canvas.captureStream(30);
+    var recorder = new MediaRecorder(stream, { mimeType: mime });
+    var chunks = [];
+
+    recorder.ondataavailable = function (e) {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    };
+    recorder.onstop = function () {
+      var blob = new Blob(chunks, { type: "video/webm" });
+      var url = URL.createObjectURL(blob);
+      var video = document.getElementById("resultVideo");
+      var link = document.getElementById("downloadLink");
+      video.src = url;
+      link.href = url;
+      document.getElementById("resultBox").classList.remove("d-none");
+      statusMsg.textContent = "✅ 書き出し完了！ダウンロードして各SNSへ投稿できます。";
+      exportBtn.disabled = false;
+      drawSlide(0);
+    };
+
+    recorder.start();
+
+    // 各スライドを順に描画。captureStream が canvas の変化を録画する。
+    var i = 0;
+    function nextFrame() {
+      if (i >= slides.length) {
+        // 最後のスライドを見せてから停止
+        setTimeout(function () { recorder.stop(); }, sec * 1000);
+        return;
+      }
+      drawSlide(i);
+      i++;
+      setTimeout(nextFrame, sec * 1000);
+    }
+    // 最初のフレームを確実に描いてから開始
+    drawSlide(0);
+    setTimeout(nextFrame, 100);
+  }
+  document.getElementById("exportBtn").addEventListener("click", exportVideo);
+
+  // 背景色・文字色の変更で即プレビュー更新
+  document.getElementById("bgColor").addEventListener("input", function () { drawSlide(0); });
+  document.getElementById("textColor").addEventListener("input", function () { drawSlide(0); });
+
+  // MediaRecorder 非対応なら書き出しボタンを注意表示
+  if (typeof MediaRecorder === "undefined" || !canvas.captureStream) {
+    document.getElementById("unsupported").classList.remove("d-none");
+  }
+
+  // 初期描画
+  renderSlideInputs();
+})();
+</script>
+{% endblock %}

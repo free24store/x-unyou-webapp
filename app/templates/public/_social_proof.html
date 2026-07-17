@@ -1,0 +1,66 @@
+{# 社会的証明パーシャル：testimonials（voice/result/logo）を描画。
+   テキストは Jinja 自動エスケープに委ねる（| safe を使わない）。
+   image_url / logo_url は src 属性値としてのみ使用。1件も無ければ何も出さない。 #}
+{% if testimonials %}
+{% set voices = testimonials | selectattr('kind', 'equalto', 'voice') | list %}
+{% set results = testimonials | selectattr('kind', 'equalto', 'result') | list %}
+{% set logos = testimonials | selectattr('kind', 'equalto', 'logo') | list %}
+<section class="py-5" style="background:#f8f9ff">
+  <div class="container" style="max-width:900px">
+    <h2 class="h3 text-center mb-5">お客様の声・実績</h2>
+
+    {# 実績（数値バッジ） #}
+    {% if results %}
+    <div class="row g-3 justify-content-center mb-5">
+      {% for r in results %}
+      <div class="col-6 col-md-4">
+        <div class="text-center p-3 rounded-3 shadow-sm bg-white h-100">
+          <div class="fw-bold text-primary" style="font-size:2rem; line-height:1.1;">{{ r.metric_value }}</div>
+          <div class="text-muted small mt-1">{{ r.metric_label }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# お客様の声（引用カード） #}
+    {% if voices %}
+    <div class="row g-4 justify-content-center mb-4">
+      {% for v in voices %}
+      <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body">
+            <div class="text-warning mb-2" style="font-size:1.1rem;">★★★★★</div>
+            <p class="mb-3" style="white-space:pre-line;">「{{ v.quote }}」</p>
+            <div class="d-flex align-items-center gap-2">
+              {% if v.image_url %}
+              <img src="{{ v.image_url }}" alt="" width="44" height="44"
+                   class="rounded-circle object-fit-cover" style="object-fit:cover;">
+              {% endif %}
+              <div class="small">
+                {% if v.author_name %}<span class="fw-bold">{{ v.author_name }}</span>{% endif %}
+                {% if v.author_title %}<span class="text-muted d-block">{{ v.author_title }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# 導入企業ロゴ #}
+    {% if logos %}
+    <div class="row g-4 justify-content-center align-items-center mt-2">
+      {% for l in logos %}
+      <div class="col-4 col-md-2 text-center">
+        <img src="{{ l.logo_url }}" alt="{{ l.author_title }}"
+             class="img-fluid" style="max-height:48px; opacity:0.85;">
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div>
+</section>
+{% endif %}

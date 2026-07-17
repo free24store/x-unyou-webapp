@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}社会的証明マネージャ — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">🗣 社会的証明マネージャ（お客様の声・実績・ロゴ）</h2>
+  <a href="{{ url_for('admin.testimonial_new') }}" class="btn btn-primary">➕ 新規追加</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> ここで登録した「声・実績・ロゴ」は、LP／セールスレターの
+  <code>&lt;!--SOCIAL_PROOF--&gt;</code> 位置へ自動で差し込まれます。<br>
+  <span class="small text-muted">「表示中」のものだけが公開ページに出ます。並び順は数字が小さいほど上に表示されます。</span>
+</div>
+
+{% if items %}
+  {% set sections = [
+    ('voice', '🗣 お客様の声', 'voice'),
+    ('result', '📈 実績・数字', 'result'),
+    ('logo', '🏢 導入企業ロゴ', 'logo')
+  ] %}
+  {% for key, label, _k in sections %}
+    {% set rows = items | selectattr('kind', 'equalto', key) | list %}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-bold">{{ label }} <span class="badge bg-secondary ms-1">{{ rows | length }}</span></span>
+      </div>
+      {% if rows %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:45%">内容</th>
+              <th style="width:20%">並び順</th>
+              <th style="width:15%">状態</th>
+              <th style="width:20%"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in rows %}
+            <tr>
+              <td class="small">
+                {% if item.kind == 'voice' %}
+                  「{{ item.quote }}」<br>
+                  <span class="text-muted">{{ item.author_name }} {{ item.author_title }}</span>
+                {% elif item.kind == 'result' %}
+                  <span class="fs-5 fw-bold text-primary">{{ item.metric_value }}</span>
+                  <span class="text-muted">{{ item.metric_label }}</span>
+                {% elif item.kind == 'logo' %}
+                  <a href="{{ item.logo_url }}" target="_blank" class="text-truncate d-inline-block" style="max-width:22rem">{{ item.logo_url }}</a>
+                  {% if item.author_title %}<br><span class="text-muted">{{ item.author_title }}</span>{% endif %}
+                {% endif %}
+              </td>
+              <td>
+                <form method="POST" action="{{ url_for('admin.testimonial_order', item_id=item.id) }}" class="d-flex gap-1">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="number" name="sort_order" value="{{ item.sort_order }}" class="form-control form-control-sm" style="width:4.5rem">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">保存</button>
+                </form>
+              </td>
+              <td>
+                <form method="POST" action="{{ url_for('admin.testimonial_toggle', item_id=item.id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm {{ 'btn-success' if item.is_active else 'btn-outline-secondary' }}">
+                    {{ '✅ 表示中' if item.is_active else '🚫 非表示' }}
+                  </button>
+                </form>
+              </td>
+              <td class="text-end">
+                <form method="POST" action="{{ url_for('admin.testimonial_delete', item_id=item.id) }}" class="d-inline"
+                      onsubmit="return confirm('この項目を削除しますか？')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-muted small">まだ登録がありません。</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% else %}
+<div class="text-center py-5 text-muted">
+  <p class="fs-5">まだ社会的証明がありません。</p>
+  <p class="small">お客様の声・実績・ロゴを登録すると、LP／セールスレターの信頼感がぐっと高まります。</p>
+  <a href="{{ url_for('admin.testimonial_new') }}" class="btn btn-primary">最初の1件を追加する</a>
+</div>
+{% endif %}
+{% endblock %}

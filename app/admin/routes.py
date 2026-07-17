@@ -9,7 +9,7 @@ from ..models import (Client, User, ProfileConcept, MetricEntry,
                       ConsultNote, CalendarEntry, Draft,
                       LandingPage, SalesLetter, LineStepSet,
                       ContactMessage, StripeProduct, StoryCampaign,
-                      ScheduledPost)
+                      ScheduledPost, Testimonial)
 from ..services.vocab import load_vocab
 from ..services.diagnostics_service import infer_phase, funnel_diagnostics, PHASE_LABELS
 from ..services.calendar_service import generate_calendar
@@ -77,6 +77,10 @@ def calendar():
 
 
 def _save_drafts(raw_drafts, client_id, batch_id):
+    # E6-1: CTA（オファー導線）はバッチ共通のフォーム値として受ける（無指定は空/None）
+    cta_label = request.form.get("cta_label", "").strip()
+    cta_url = request.form.get("cta_url", "").strip()
+    offer_lp_id = request.form.get("offer_lp_id") or None
     for d in raw_drafts:
         draft = Draft(
             client_id=client_id,
@@ -88,6 +92,9 @@ def _save_drafts(raw_drafts, client_id, batch_id):
             education_name=d["education_name"],
             source=d["source"],
             text=d["text"],
+            cta_label=cta_label,
+            cta_url=cta_url,
+            offer_lp_id=int(offer_lp_id) if offer_lp_id else None,
             generated_by_user_id=current_user.id,
         )
         db.session.add(draft)
@@ -140,8 +147,17 @@ def drafts():
     all_drafts = Draft.query.filter_by(client_id=client_id).order_by(Draft.generated_at.desc()).all()
     edu_stages = vocab["education_stages_basic"] + vocab["education_stages_boost"]
     guda_items = vocab.get("guda_items", [])
+    # E6-1: CTA（オファー導線）候補
+    cta_lps = (LandingPage.query.filter_by(client_id=client_id, is_published=True)
+               .order_by(LandingPage.created_at.desc()).all())
+    cta_letters = (SalesLetter.query.filter_by(client_id=client_id, is_published=True)
+                   .order_by(SalesLetter.created_at.desc()).all())
+    cta_products = (StripeProduct.query.filter_by(client_id=client_id)
+                    .order_by(StripeProduct.created_at.desc()).all())
     return render_template("admin/drafts.html", drafts=all_drafts,
-                           edu_stages=edu_stages, guda_items=guda_items)
+                           edu_stages=edu_stages, guda_items=guda_items,
+                           cta_lps=cta_lps, cta_letters=cta_letters,
+                           cta_products=cta_products)
 
 
 @bp.route("/drafts/<int:draft_id>/review", methods=["POST"])
@@ -211,17 +227,62 @@ def analytics():
         "calendar":  CalendarEntry.query.filter_by(client_id=client_id).count() > 0,
         "drafts":    Draft.query.filter_by(client_id=client_id).count() > 0,
         "sns":       SnsConnection.query.filter_by(client_id=client_id, is_active=True).count() > 0,
-        "scheduled": ScheduledPost.query.filter_by(client_id=client_id, status="pending").count() > 0,
+        "scheduled": ScheduledPost.query.filter_by(client_id=client_id).filter(
+            ScheduledPost.status.in_(["pending", "approved"])).count() > 0,
     }
     setup_done = all(setup_steps.values())
 
-    # 今日投稿すべき予定を取得
+    # 今日投稿すべき予定を取得（承認待ち＋承認済みの両方）
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0)
     today_end   = today_start + timedelta(days=1)
-    today_posts = ScheduledPost.query.filter_by(client_id=client_id, status="pending").filter(
+    today_posts = ScheduledPost.query.filter_by(client_id=client_id).filter(
+        ScheduledPost.status.in_(["pending", "approved"])).filter(
         ScheduledPost.scheduled_at >= today_start,
         ScheduledPost.scheduled_at < today_end
     ).all()
+
+    # ── 客層フィット可視化（E6-4）─────────────────────────
+    # 「リーチ指標（認知の広さ）」と「見込み客/成約指標（収益に近い）」を
+    # 明確に分離して渡し、KPIの取り違えを防ぐ。schema変更なし・既存データのみ。
+    def _latest(attr):
+        return getattr(latest, attr, None) if latest is not None else None
+
+    # 問い合わせ（ContactMessage）は読み取りのみで「相談リード」として集計
+    contact_total = ContactMessage.query.filter_by(client_id=client_id).count()
+    contact_unread = ContactMessage.query.filter_by(client_id=client_id, is_read=False).count()
+
+    reach_metrics = [
+        {"label": "平均インプレッション", "emoji": "👁",
+         "value": _latest("avg_impressions"), "unit": "回",
+         "hint": "投稿がどれだけ見られたか＝認知の広さ"},
+        {"label": "フォロワー増加", "emoji": "👥",
+         "value": _latest("followers_delta_per_day"), "unit": "人/日",
+         "hint": "新しく届いた人の数"},
+        {"label": "エンゲージメント率", "emoji": "❤️",
+         "value": _latest("engagement_rate_pct"), "unit": "%",
+         "hint": "いいね・リポストなどの反応率"},
+        {"label": "投稿数", "emoji": "✍️",
+         "value": _latest("posts_per_day"), "unit": "件/日",
+         "hint": "リーチを生む発信量"},
+    ]
+    prospect_metrics = [
+        {"label": "リスト/LINE登録", "emoji": "📩",
+         "value": _latest("list_signups_per_day"), "unit": "件/日",
+         "hint": "見込み客リストの獲得ペース"},
+        {"label": "リスト→面談率", "emoji": "🤝",
+         "value": _latest("meeting_rate_pct"), "unit": "%",
+         "hint": "相談・面談につながった割合"},
+        {"label": "面談→成約率", "emoji": "💰",
+         "value": _latest("conversion_rate_pct"), "unit": "%",
+         "hint": "成約＝収益に直結する最終指標"},
+        {"label": "相談リード（問い合わせ）", "emoji": "📨",
+         "value": contact_total, "unit": "件",
+         "hint": "LP・セールスレターからの問い合わせ累計"
+                 + ("（未読 {}件）".format(contact_unread) if contact_unread else "")},
+    ]
+    fit_warning = ("フォロワー数や表示回数（リーチ指標）だけを見て売上を判断しないでください。"
+                   "バズる相手と実際に買う見込み客はズレやすいので、"
+                   "相談・成約（見込み客/成約指標）と必ずセットで確認しましょう。")
 
     return render_template(
         "admin/analytics.html",
@@ -230,6 +291,8 @@ def analytics():
         metric_labels=metric_labels, metric_series=metric_series,
         setup_steps=setup_steps, setup_done=setup_done,
         today_posts=today_posts,
+        reach_metrics=reach_metrics, prospect_metrics=prospect_metrics,
+        fit_warning=fit_warning, has_metrics=bool(latest),
     )
 
 
@@ -337,6 +400,112 @@ def lp_delete(page_id):
     db.session.commit()
     flash("LPを削除しました。", "success")
     return redirect(url_for("admin.lp_list"))
+
+
+# ──────────────────────────────────────────────
+# 社会的証明マネージャ（お客様の声 / 実績 / ロゴ）
+# ──────────────────────────────────────────────
+
+TESTIMONIAL_KINDS = ("voice", "result", "logo")
+
+
+@bp.route("/testimonials")
+def testimonial_list():
+    client_id = _client_id()
+    items = (Testimonial.query
+             .filter_by(client_id=client_id)
+             .order_by(Testimonial.kind, Testimonial.sort_order, Testimonial.id)
+             .all())
+    return render_template("admin/testimonial_list.html", items=items, client_id=client_id)
+
+
+@bp.route("/testimonials/new", methods=["GET", "POST"])
+def testimonial_new():
+    client_id = _client_id()
+
+    if request.method == "POST":
+        kind = request.form.get("kind", "voice").strip()
+        if kind not in TESTIMONIAL_KINDS:
+            kind = "voice"
+        author_name = request.form.get("author_name", "").strip()
+        author_title = request.form.get("author_title", "").strip()
+        quote = request.form.get("quote", "").strip()
+        metric_label = request.form.get("metric_label", "").strip()
+        metric_value = request.form.get("metric_value", "").strip()
+        image_url = request.form.get("image_url", "").strip()
+        logo_url = request.form.get("logo_url", "").strip()
+        try:
+            sort_order = int(request.form.get("sort_order", "0") or 0)
+        except ValueError:
+            sort_order = 0
+
+        # kind別必須検証
+        form = dict(kind=kind, author_name=author_name, author_title=author_title,
+                    quote=quote, metric_label=metric_label, metric_value=metric_value,
+                    image_url=image_url, logo_url=logo_url, sort_order=sort_order)
+        if kind == "voice" and not quote:
+            flash("「お客様の声」には引用文（quote）が必須です。", "danger")
+            return render_template("admin/testimonial_new.html", form=form, kinds=TESTIMONIAL_KINDS)
+        if kind == "result" and not (metric_label and metric_value):
+            flash("「実績」には指標ラベルと数値の両方が必須です。", "danger")
+            return render_template("admin/testimonial_new.html", form=form, kinds=TESTIMONIAL_KINDS)
+        if kind == "logo" and not logo_url:
+            flash("「ロゴ」にはロゴURLが必須です。", "danger")
+            return render_template("admin/testimonial_new.html", form=form, kinds=TESTIMONIAL_KINDS)
+
+        item = Testimonial(
+            client_id=client_id,
+            kind=kind,
+            author_name=author_name,
+            author_title=author_title,
+            quote=quote,
+            metric_label=metric_label,
+            metric_value=metric_value,
+            image_url=image_url,
+            logo_url=logo_url,
+            is_active=True,
+            sort_order=sort_order,
+        )
+        db.session.add(item)
+        db.session.commit()
+        flash("社会的証明を追加しました。", "success")
+        return redirect(url_for("admin.testimonial_list"))
+
+    return render_template("admin/testimonial_new.html", form=None, kinds=TESTIMONIAL_KINDS)
+
+
+@bp.route("/testimonials/<int:item_id>/toggle", methods=["POST"])
+def testimonial_toggle(item_id):
+    item = Testimonial.query.get_or_404(item_id)
+    if item.client_id != _client_id():
+        abort(403)
+    item.is_active = not item.is_active
+    db.session.commit()
+    return redirect(url_for("admin.testimonial_list"))
+
+
+@bp.route("/testimonials/<int:item_id>/delete", methods=["POST"])
+def testimonial_delete(item_id):
+    item = Testimonial.query.get_or_404(item_id)
+    if item.client_id != _client_id():
+        abort(403)
+    db.session.delete(item)
+    db.session.commit()
+    flash("社会的証明を削除しました。", "success")
+    return redirect(url_for("admin.testimonial_list"))
+
+
+@bp.route("/testimonials/<int:item_id>/order", methods=["POST"])
+def testimonial_order(item_id):
+    item = Testimonial.query.get_or_404(item_id)
+    if item.client_id != _client_id():
+        abort(403)
+    try:
+        item.sort_order = int(request.form.get("sort_order", "0") or 0)
+    except ValueError:
+        item.sort_order = 0
+    db.session.commit()
+    return redirect(url_for("admin.testimonial_list"))
 
 
 # ──────────────────────────────────────────────
@@ -469,9 +638,35 @@ def line_steps_delete(set_id):
 @bp.route("/contact-inbox")
 def contact_inbox():
     client_id = _client_id()
-    messages = ContactMessage.query.filter_by(client_id=client_id).order_by(ContactMessage.created_at.desc()).all()
+    all_messages = (ContactMessage.query
+                    .filter_by(client_id=client_id)
+                    .order_by(ContactMessage.created_at.desc())
+                    .all())
+
+    # 出所別の集計（導線トラッキング）。空/未設定は "direct" とみなす。
+    source_counts = {}
+    for m in all_messages:
+        key = (m.source or "direct").strip() or "direct"
+        source_counts[key] = source_counts.get(key, 0) + 1
+    # 件数の多い順に整列
+    source_counts = dict(sorted(source_counts.items(),
+                                key=lambda kv: kv[1], reverse=True))
+
+    # 出所フィルタ（?src=lp など）。空なら全件。
+    active_src = (request.args.get("src", "").strip())
+    if active_src:
+        messages = [m for m in all_messages
+                    if ((m.source or "direct").strip() or "direct") == active_src]
+    else:
+        messages = all_messages
+
     unread = sum(1 for m in messages if not m.is_read)
-    return render_template("admin/contact_inbox.html", messages=messages, unread=unread)
+    return render_template("admin/contact_inbox.html",
+                           messages=messages,
+                           unread=unread,
+                           source_counts=source_counts,
+                           total=len(all_messages),
+                           active_src=active_src)
 
 
 @bp.route("/contact-inbox/<int:msg_id>/read", methods=["POST"])
@@ -631,7 +826,8 @@ def story_campaign_detail(campaign_id):
         abort(403)
 
     posts = (ScheduledPost.query
-             .filter_by(client_id=client_id, status="pending")
+             .filter_by(client_id=client_id)
+             .filter(ScheduledPost.status.in_(["pending", "approved"]))
              .filter(ScheduledPost.scheduled_at >= datetime.combine(campaign.start_date, datetime.min.time()))
              .filter(ScheduledPost.scheduled_at <= datetime.combine(campaign.end_date, datetime.max.time()))
              .order_by(ScheduledPost.scheduled_at)
@@ -647,8 +843,9 @@ def story_campaign_delete(campaign_id):
     if campaign.client_id != client_id:
         abort(403)
 
-    # 関連する予約投稿も削除
-    ScheduledPost.query.filter_by(client_id=client_id, status="pending").filter(
+    # 関連する予約投稿も削除（承認待ち＋承認済み。投稿済みは履歴として残す）
+    ScheduledPost.query.filter_by(client_id=client_id).filter(
+        ScheduledPost.status.in_(["pending", "approved"]),
         ScheduledPost.scheduled_at >= datetime.combine(campaign.start_date, datetime.min.time()),
         ScheduledPost.scheduled_at <= datetime.combine(campaign.end_date, datetime.max.time()),
     ).delete()
@@ -678,3 +875,115 @@ def campaign_post_edit(post_id):
         return redirect(request.referrer or url_for("admin.story_campaign_list"))
 
     return render_template("admin/campaign_post_edit.html", post=post)
+
+
+# --- メトリクス取込（ブックマークレット経由） -------------------------------
+# 設計: ブックマークレットは X アナリティクス画面で数値を集めて
+#       /admin/metrics/import?data=... に運ぶだけ（GET・書き込みなし）。
+#       管理者が内容を確認し、通常の CSRF 付き POST で保存する。
+#       → 外部オリジンから直接 DB に書き込ませない。
+
+METRIC_IMPORT_FIELDS = [
+    ("posts_per_day", "投稿数/日"),
+    ("avg_impressions", "平均インプレッション"),
+    ("engagement_rate_pct", "エンゲージメント率(%)"),
+    ("followers_delta_per_day", "フォロワー増加/日"),
+    ("list_signups_per_day", "LINE登録数/日"),
+    ("meeting_rate_pct", "リスト→面談率(%)"),
+    ("conversion_rate_pct", "面談→成約率(%)"),
+]
+
+
+def _parse_metric_import_data(raw):
+    """ブックマークレットが渡す data= を安全にパースしてプリフィル用 dict を返す。
+
+    受理する形式: URLエンコードされた JSON、または base64(JSON)。
+    壊れた入力・想定外のキーは黙って捨てる（画面は必ず開ける）。
+    """
+    prefill = {}
+    if not raw:
+        return prefill
+
+    import json
+    import base64
+
+    payload = None
+    for loader in (lambda s: json.loads(s),
+                   lambda s: json.loads(base64.b64decode(s + "=" * (-len(s) % 4)).decode("utf-8"))):
+        try:
+            payload = loader(raw)
+            if isinstance(payload, dict):
+                break
+            payload = None
+        except Exception:
+            payload = None
+    if not isinstance(payload, dict):
+        return prefill
+
+    allowed = {name for name, _ in METRIC_IMPORT_FIELDS}
+    for key, value in payload.items():
+        if key not in allowed or value in (None, ""):
+            continue
+        try:
+            prefill[key] = float(str(value).replace(",", "").replace("%", "").strip())
+        except (TypeError, ValueError):
+            continue
+
+    raw_date = payload.get("date")
+    if raw_date:
+        try:
+            prefill["date"] = datetime.strptime(str(raw_date)[:10], "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            pass
+    return prefill
+
+
+@bp.route("/metrics/import", methods=["GET", "POST"])
+def metrics_import():
+    client_id = _client_id()
+
+    if request.method == "POST":
+        raw_date = request.form.get("date", "").strip()
+        try:
+            entry_date = datetime.strptime(raw_date, "%Y-%m-%d").date() if raw_date else date.today()
+        except ValueError:
+            flash("日付の形式が正しくありません（YYYY-MM-DD）。", "warning")
+            return redirect(url_for("admin.metrics_import"))
+
+        def _f(key):
+            v = request.form.get(key, "").strip().replace(",", "").replace("%", "")
+            if not v:
+                return None
+            try:
+                return float(v)
+            except ValueError:
+                return None
+
+        values = {name: _f(name) for name, _ in METRIC_IMPORT_FIELDS}
+        if all(v is None for v in values.values()):
+            flash("取り込む数値がありません。1つ以上入力してください。", "warning")
+            return redirect(url_for("admin.metrics_import"))
+
+        m = MetricEntry.query.filter_by(client_id=client_id, date=entry_date).first()
+        created = m is None
+        if created:
+            m = MetricEntry(client_id=client_id, date=entry_date,
+                            logged_by_user_id=current_user.id)
+            db.session.add(m)
+        for name, value in values.items():
+            if value is not None:
+                setattr(m, name, value)
+        db.session.commit()
+        flash("{} の指標を{}しました。".format(entry_date.isoformat(),
+                                          "取り込み" if created else "更新"), "success")
+        return redirect(url_for("admin.analytics"))
+
+    prefill = _parse_metric_import_data(request.args.get("data", ""))
+    prefill.setdefault("date", date.today().isoformat())
+    recent = (MetricEntry.query.filter_by(client_id=client_id)
+              .order_by(MetricEntry.date.desc()).limit(5).all())
+    return render_template("admin/metrics_import.html",
+                           fields=METRIC_IMPORT_FIELDS,
+                           prefill=prefill,
+                           has_data=bool(request.args.get("data", "")),
+                           recent=recent)

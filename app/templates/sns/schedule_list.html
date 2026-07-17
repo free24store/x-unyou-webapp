@@ -18,19 +18,22 @@
       <div class="accordion-body small">
         <div class="row g-3">
           <div class="col-md-5">
-            <strong>自動実行の仕組み</strong>
+            <strong>自動実行の仕組み（承認ゲート付き）</strong>
             <ul class="mb-0 mt-1">
-              <li>サーバー起動中、1分ごとに「予約中」の投稿をチェックして自動送信します。</li>
-              <li>指定時刻を過ぎると最大1分以内に実行されます（サーバーが稼働している場合）。</li>
-              <li>「今すぐ」ボタンで手動でも即時実行できます。</li>
-              <li><span class="text-warning">注意:</span> サーバーが停止中は実行されません。サーバー起動時に未実行分がまとめて送信されます。</li>
+              <li><strong class="text-danger">「承認済み」の投稿だけ</strong>が自動送信されます。承認待ち・下書きは絶対に投稿されません。</li>
+              <li>サーバー起動中、1分ごとにチェックし、<strong>1回につき最大1件</strong>だけ送信します。</li>
+              <li>前回の投稿から<strong>{{ min_interval }}分</strong>以上あけます（人間的なペース＝連投・バーストを防ぐ）。</li>
+              <li>「今すぐ」ボタンも承認済みの投稿にのみ使えます。</li>
+              <li><span class="text-warning">注意:</span> サーバー停止中は実行されません。再開後も1件ずつ・間隔をあけて順に送信されます。</li>
             </ul>
           </div>
           <div class="col-md-4">
             <strong>ステータスの意味</strong>
             <table class="table table-sm mb-0 mt-1">
               <tbody>
-                <tr><td><span class="badge bg-primary">予約中</span></td><td>まだ実行されていない</td></tr>
+                <tr><td><span class="badge bg-secondary">下書き</span></td><td>作成途中（投稿対象外）</td></tr>
+                <tr><td><span class="badge bg-warning text-dark">承認待ち</span></td><td>未承認。<strong>投稿されません</strong></td></tr>
+                <tr><td><span class="badge bg-primary">承認済み</span></td><td>予約時刻に自動投稿される</td></tr>
                 <tr><td><span class="badge bg-success">投稿済み</span></td><td>正常に投稿完了</td></tr>
                 <tr><td><span class="badge bg-danger">失敗</span></td><td>APIエラー（行をホバーで詳細表示）</td></tr>
                 <tr><td><span class="badge bg-secondary">キャンセル</span></td><td>手動でキャンセルした</td></tr>
@@ -50,6 +53,13 @@
       </div>
     </div>
   </div>
+</div>
+
+<div class="alert alert-warning mb-3 small">
+  <strong>⚠ 承認しないと投稿されません。</strong>
+  自動投稿の対象は<strong>「承認済み」</strong>の投稿だけです（承認待ち・下書きは送信されません）。
+  内容を確認して「承認」を押してください。承認後も <strong>1回1件・前回から{{ min_interval }}分以上</strong>の間隔で送信します。
+  {% if pending_count %}<br>現在 <strong>{{ pending_count }}件</strong> が承認待ちです。{% endif %}
 </div>
 
 <div class="alert alert-info d-flex align-items-center gap-2 mb-3 small">
@@ -76,10 +86,12 @@
     <tbody>
       {% for post in posts %}
       {% set is_due = post.scheduled_at <= now %}
-      <tr class="{% if post.status == 'pending' and is_due %}table-warning{% endif %}">
+      {% set is_open = post.status in ['draft', 'pending', 'approved'] %}
+      <tr class="{% if is_open and is_due %}table-warning{% endif %}">
         <td class="small text-nowrap">
           {{ post.scheduled_at.strftime('%m/%d %H:%M') }}
-          {% if post.status == 'pending' and is_due %}<br><span class="badge bg-warning text-dark">投稿時刻！</span>{% endif %}
+          {% if is_open and is_due %}<br><span class="badge bg-warning text-dark">投稿時刻！</span>{% endif %}
+          {% if post.status == 'pending' and is_due %}<br><span class="small text-danger">未承認のため保留</span>{% endif %}
         </td>
         <td>
           <span class="badge bg-{% if post.platform == 'x' %}dark{% elif post.platform == 'instagram' %}warning text-dark{% elif post.platform == 'tiktok' %}danger{% else %}success{% endif %}">
@@ -93,18 +105,37 @@
           <button class="btn btn-sm btn-outline-dark" onclick="copyText({{ post.id }})">📋 テキストをコピー</button>
         </td>
         <td>
-          {% if post.status == 'pending' %}
-            <span class="badge bg-primary">予約中</span>
+          {% if post.status == 'draft' %}
+            <span class="badge bg-secondary">下書き</span>
+          {% elif post.status == 'pending' %}
+            <span class="badge bg-warning text-dark">承認待ち</span>
+            <div class="small text-muted mt-1">投稿されません</div>
+          {% elif post.status == 'approved' %}
+            <span class="badge bg-primary">承認済み</span>
+            {% if post.approved_at %}<div class="small text-muted mt-1">{{ post.approved_at.strftime('%m/%d %H:%M') }} 承認</div>{% endif %}
           {% elif post.status == 'posted' %}
             <span class="badge bg-success">投稿済み</span>
           {% elif post.status == 'failed' %}
             <span class="badge bg-danger">失敗</span>
           {% elif post.status == 'cancelled' %}
             <span class="badge bg-secondary">キャンセル</span>
+          {% else %}
+            <span class="badge bg-light text-dark">{{ status_labels.get(post.status, post.status) }}</span>
           {% endif %}
         </td>
         <td class="text-nowrap">
           {% if post.status == 'pending' %}
+          <form method="post" action="{{ url_for('sns.schedule_approve', post_id=post.id) }}" class="d-inline" onsubmit="return confirm('この内容で承認しますか？承認すると予約時刻に自動投稿されます。')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-primary">✓ 承認</button>
+          </form>
+          {% elif post.status == 'approved' %}
+          <form method="post" action="{{ url_for('sns.schedule_unapprove', post_id=post.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-warning">承認取消</button>
+          </form>
+          {% endif %}
+          {% if post.status in ['draft', 'pending', 'approved', 'failed'] %}
           <form method="post" action="{{ url_for('sns.mark_posted', post_id=post.id) }}" class="d-inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-sm btn-success">✓ 投稿済み</button>

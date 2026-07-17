@@ -25,3 +25,6 @@ instance/videos/
 instance/images/
 *.log
 nohup.out
+
+# 開発組織の内部ワークスペース（製品には含めない）
+_org/

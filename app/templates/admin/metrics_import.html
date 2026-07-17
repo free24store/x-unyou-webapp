@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}メトリクス取込{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">📊 メトリクス取込</h2>
+  <a href="{{ url_for('admin.metrics_log') }}" class="btn btn-outline-secondary btn-sm">← 手入力ページへ</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> ブックマークレットは X アナリティクスの数値を「拾って運ぶ」だけです。
+  保存はこのページの確認フォームから行うので、<strong>勝手にデータが書き換わることはありません</strong>。<br>
+  <span class="small">
+    拾えなかった項目は空欄で届きます。空欄のまま保存すれば、その項目は変更されません。<br>
+    「フォロワー増加/日」は<strong>総フォロワー数ではなく前日比の増減</strong>です。総数を拾わないよう自動取得は控えめにしているので、
+    空欄のときは手で入力してください。LINE登録・面談率・成約率は X の画面に無いため常に手入力です。
+  </span>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">使い方（3ステップ）</div>
+  <div class="card-body">
+    <ol class="mb-0">
+      <li class="mb-3">
+        <strong>ボタンをブックマークバーにドラッグ</strong>（1回だけ）<br>
+        <a id="ybBookmarklet" class="btn btn-primary btn-sm mt-2" href="#" onclick="alert('このボタンはクリックではなく、ブックマークバーにドラッグして登録してください。'); return false;">📊 X数値をYB BOOSTへ</a>
+        <div class="small text-muted mt-1">
+          ドラッグできない場合は
+          <a href="#" data-bs-toggle="collapse" data-bs-target="#ybBookmarkletCode">コードを手動コピー</a>して、
+          ブックマークのURL欄に貼り付けてください。
+        </div>
+        <div class="collapse mt-2" id="ybBookmarkletCode">
+          <textarea class="form-control small" rows="4" readonly id="ybBookmarkletSrc" onclick="this.select();"></textarea>
+        </div>
+      </li>
+      <li class="mb-3">
+        <strong>X アナリティクスを開いてボタンを押す</strong><br>
+        <a href="https://analytics.twitter.com/" target="_blank" rel="noopener" class="small">analytics.twitter.com</a>
+        （または X アプリ内の「アナリティクス」画面）で、期間を選んでからブックマークをクリック。
+        <div class="small text-muted">数値を拾って、このページが新しいタブで開きます。</div>
+      </li>
+      <li>
+        <strong>数値を確認して「取り込む」</strong><br>
+        <span class="small text-muted">画面の数値と見比べて、必要なら直してから保存します。</span>
+      </li>
+    </ol>
+  </div>
+</div>
+
+{% if has_data %}
+<div class="alert alert-success py-2 small">
+  ✅ ブックマークレットから数値を受け取りました。内容を確認して「取り込む」を押してください。
+</div>
+{% endif %}
+
+<div class="card mb-4" style="max-width: 700px;">
+  <div class="card-header">取り込む内容の確認</div>
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">日付</label>
+          <input type="date" name="date" class="form-control" value="{{ prefill.date }}">
+        </div>
+        {% for name, label in fields %}
+        <div class="col-md-4">
+          <label class="form-label">
+            {{ label }}
+            {% if prefill.get(name) is not none %}<span class="badge bg-success">取得</span>{% endif %}
+          </label>
+          <input type="number" step="0.01" name="{{ name }}" class="form-control"
+                 value="{{ prefill.get(name) if prefill.get(name) is not none else '' }}"
+                 placeholder="数値">
+        </div>
+        {% endfor %}
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">この内容で取り込む</button>
+        <a href="{{ url_for('admin.metrics_import') }}" class="btn btn-outline-secondary">クリア</a>
+      </div>
+      <div class="form-text mt-2">同じ日付の記録がある場合は、入力した項目だけ上書きされます。</div>
+    </form>
+  </div>
+</div>
+
+{% if recent %}
+<h6>直近 {{ recent|length }} 件</h6>
+<div class="table-responsive">
+  <table class="table table-sm table-bordered small">
+    <thead class="table-light">
+      <tr>
+        <th>日付</th><th>投稿数</th><th>平均インプ</th><th>エンゲージ%</th><th>フォロワー増</th><th>リスト登録</th><th>面談率%</th><th>成約率%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in recent %}
+      <tr>
+        <td>{{ m.date }}</td>
+        <td>{{ m.posts_per_day or '-' }}</td>
+        <td>{{ m.avg_impressions or '-' }}</td>
+        <td>{{ m.engagement_rate_pct or '-' }}</td>
+        <td>{{ m.followers_delta_per_day or '-' }}</td>
+        <td>{{ m.list_signups_per_day or '-' }}</td>
+        <td>{{ m.meeting_rate_pct or '-' }}</td>
+        <td>{{ m.conversion_rate_pct or '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted small">まだ記録がありません。最初の取込がここに表示されます。</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var ORIGIN = {{ (request.url_root.rstrip('/'))|tojson }};
+
+  // ブックマークレット本体（X アナリティクス画面で実行される）
+  function ybCollect() {
+    function toNum(t) {
+      if (!t) return '';
+      var s = String(t).replace(/,/g, '').replace(/\s/g, '');
+      var m = s.match(/(-?\d+(?:\.\d+)?)(万|K|k|M)?/);
+      if (!m) return '';
+      var v = parseFloat(m[1]);
+      if (m[2] === '万') v = v * 10000;
+      else if (m[2] === 'K' || m[2] === 'k') v = v * 1000;
+      else if (m[2] === 'M') v = v * 1000000;
+      return String(v);
+    }
+    function grab(keys) {
+      var els = document.querySelectorAll('div,span,td,th,li,p,h1,h2,h3');
+      for (var i = 0; i < els.length; i++) {
+        var t = (els[i].textContent || '').trim();
+        if (!t || t.length > 40) continue;
+        for (var k = 0; k < keys.length; k++) {
+          if (t.indexOf(keys[k]) === -1) continue;
+          var box = els[i].parentElement ? els[i].parentElement.textContent : t;
+          var n = toNum(String(box).replace(keys[k], ''));
+          if (n !== '') return n;
+        }
+      }
+      return '';
+    }
+    var d = { date: new Date().toISOString().slice(0, 10) };
+    var map = [
+      ['avg_impressions', ['インプレッション', 'Impressions']],
+      ['engagement_rate_pct', ['エンゲージメント率', 'Engagement rate']],
+      // 「フォロワー」単体は総フォロワー数を拾ってしまい増加数と混ざるため、増分を示す語のみ対象
+      ['followers_delta_per_day', ['新しいフォロー', 'フォロワー増', 'New follows']],
+      ['posts_per_day', ['ポスト', 'ツイート', 'Posts', 'Tweets']]
+    ];
+    for (var i = 0; i < map.length; i++) {
+      var v = grab(map[i][1]);
+      if (v !== '') d[map[i][0]] = v;
+    }
+    window.open(YB_ORIGIN + '/admin/metrics/import?data=' + encodeURIComponent(JSON.stringify(d)), '_blank');
+  }
+
+  var src = '(function(){var YB_ORIGIN=' + JSON.stringify(ORIGIN) + ';(' +
+            ybCollect.toString() + ')();})();';
+  var href = 'javascript:' + encodeURIComponent(src);
+  var link = document.getElementById('ybBookmarklet');
+  if (link) link.setAttribute('href', href);
+  var box = document.getElementById('ybBookmarkletSrc');
+  if (box) box.value = href;
+})();
+</script>
+{% endblock %}

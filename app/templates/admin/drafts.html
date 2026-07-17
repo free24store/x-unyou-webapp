@@ -93,10 +93,9 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-auto">
-              <button type="submit" class="btn btn-primary">生成する</button>
-            </div>
           </div>
+          {% include "partials/_cta_block.html" %}
+          <button type="submit" class="btn btn-primary mt-3">生成する</button>
         </form>
       </div>
     </div>
@@ -121,6 +120,7 @@
             </label>
           </div>
           {% endfor %}
+          {% include "partials/_cta_block.html" %}
           <div class="mt-3">
             <button type="submit" class="btn btn-warning">言い訳を潰す投稿文を生成</button>
           </div>
@@ -159,7 +159,8 @@
             <textarea name="ketsu" class="form-control" rows="2" placeholder="例: 凍結から復活後、方針を変えたら1ヶ月でフォロワー300人増えた"></textarea>
             <div class="form-text text-muted">💡 フォロワー数より「変化の大きさ」を数字で表すと伝わりやすいです</div>
           </div>
-          <button type="submit" class="btn btn-info text-white">ストーリー投稿文を生成</button>
+          {% include "partials/_cta_block.html" %}
+          <button type="submit" class="btn btn-info text-white mt-3">ストーリー投稿文を生成</button>
         </form>
       </div>
     </div>
@@ -206,6 +207,9 @@
       </span>
       <span class="badge source-badge-{{ draft.source }} text-white ms-1">{{ draft.source }}</span>
       {% if draft.reviewed %}<span class="badge bg-success ms-1">✓ 確認済み</span>{% endif %}
+      {% if draft.cta_label or draft.cta_url or draft.offer_lp_id %}
+      <span class="badge bg-primary ms-1" title="{{ draft.cta_url or ('内部LP #' ~ draft.offer_lp_id) }}">🎯 CTA{% if draft.cta_label %}: {{ draft.cta_label }}{% endif %}</span>
+      {% endif %}
     </span>
     <div class="d-flex gap-2 align-items-center">
       <button class="btn btn-sm btn-outline-dark" onclick="draftCopy({{ draft.id }})">📋 コピー</button>
@@ -240,6 +244,91 @@
 
 {% block scripts %}
 <script>
+// === E6-1: オファー導線（CTA）ブロック共通制御 ===
+function wireCtaBlock(block) {
+  const kind = block.querySelector('.cta-kind');
+  const panes = block.querySelectorAll('.cta-pane');
+  const lpSel = block.querySelector('.cta-lp');       // name=offer_lp_id
+  const letterSel = block.querySelector('.cta-letter');
+  const productSel = block.querySelector('.cta-product');
+  const freeUrl = block.querySelector('.cta-freeurl');
+  const hiddenUrl = block.querySelector('.cta-url');   // name=cta_url
+  const label = block.querySelector('.cta-label');
+  const previewWrap = block.querySelector('.cta-preview-wrap');
+  const preview = block.querySelector('.cta-preview');
+
+  function syncUrl() {
+    const k = kind.value;
+    let url = '';
+    // LP選択時は cta_url を空にし offer_lp_id を使う。それ以外は offer_lp_id を空に。
+    if (k === 'lp') {
+      hiddenUrl.value = '';
+    } else {
+      if (lpSel) lpSel.value = '';
+      if (k === 'letter') url = letterSel ? letterSel.value : '';
+      else if (k === 'product') url = productSel ? productSel.value : '';
+      else if (k === 'url') url = freeUrl ? freeUrl.value.trim() : '';
+      hiddenUrl.value = url;
+    }
+    updatePreview();
+  }
+
+  function updatePreview() {
+    const k = kind.value;
+    const lab = (label.value || '').trim();
+    let shown = '';
+    if (k === 'lp') {
+      const t = lpSel && lpSel.selectedOptions[0] ? lpSel.selectedOptions[0].textContent.trim() : '';
+      if (lpSel && lpSel.value) shown = (lab ? lab + ' ' : '') + '→ ' + t + '（公開LP）';
+    } else if (hiddenUrl.value) {
+      shown = (lab ? lab + ' ' : '') + hiddenUrl.value;
+    }
+    if (shown) { preview.textContent = shown; previewWrap.style.display = ''; }
+    else { previewWrap.style.display = 'none'; }
+  }
+
+  function showPane() {
+    const k = kind.value;
+    panes.forEach(p => { p.style.display = (p.dataset.kind === k) ? '' : 'none'; });
+    syncUrl();
+  }
+
+  kind.addEventListener('change', showPane);
+  if (lpSel) lpSel.addEventListener('change', updatePreview);
+  if (letterSel) letterSel.addEventListener('change', syncUrl);
+  if (productSel) productSel.addEventListener('change', syncUrl);
+  if (freeUrl) freeUrl.addEventListener('input', syncUrl);
+  label.addEventListener('input', updatePreview);
+
+  // プリフィル（予約フォーム等）
+  block.applyCta = function(lpId, url, lab) {
+    label.value = lab || '';
+    if (lpId) {
+      kind.value = 'lp';
+      if (lpSel) lpSel.value = String(lpId);
+    } else if (url) {
+      kind.value = 'url';
+      if (freeUrl) freeUrl.value = url;
+    } else {
+      kind.value = '';
+      if (freeUrl) freeUrl.value = '';
+      if (lpSel) lpSel.value = '';
+    }
+    showPane();
+  };
+
+  // 初期プリフィル（data属性）
+  const pLp = block.dataset.prefillLp;
+  const pUrl = block.dataset.prefillUrl;
+  if (pLp || pUrl) { block.applyCta(pLp, pUrl, label.value); }
+  else { showPane(); }
+}
+
+function initCtaBlocks() {
+  document.querySelectorAll('.cta-block').forEach(wireCtaBlock);
+}
+document.addEventListener('DOMContentLoaded', initCtaBlocks);
+
 function draftCopy(draftId) {
   const el = document.getElementById('drafttext-' + draftId);
   if (!el) return;
