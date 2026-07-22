@@ -7,10 +7,19 @@ from flask_login import current_user
 
 app = create_app()
 
-with app.app_context():
-    from app.extensions import db
-    os.makedirs(app.instance_path, exist_ok=True)
-    db.create_all()
+# 起動時のスキーマ準備。DBへ接続できなくても gunicorn の起動は止めない
+# （本番の全断＝502を防ぐ）。実テーブル作成/差分適用は起動前の
+# `flask ensure-schema`（render.yaml startCommand・|| true でガード）が担う。
+try:
+    with app.app_context():
+        from app.extensions import db
+        os.makedirs(app.instance_path, exist_ok=True)
+        db.create_all()
+except Exception as _e:  # noqa: BLE001
+    import logging
+    logging.getLogger("wsgi").exception(
+        "起動時 db.create_all をスキップ（DB未接続の可能性）: %s", _e
+    )
 
 
 @app.route("/")
