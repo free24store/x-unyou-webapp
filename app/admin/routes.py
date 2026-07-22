@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from flask import render_template, redirect, url_for, flash, request, abort
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
@@ -9,7 +9,7 @@ from ..models import (Client, User, ProfileConcept, MetricEntry,
                       ConsultNote, CalendarEntry, Draft,
                       LandingPage, SalesLetter, LineStepSet,
                       ContactMessage, StripeProduct, StoryCampaign,
-                      ScheduledPost, Testimonial,
+                      ScheduledPost, Testimonial, Purchase,
                       POST_STATUS_PENDING, POST_STATUS_APPROVED,
                       POST_STATUS_LABELS, can_transition)
 from ..services.vocab import load_vocab
@@ -17,6 +17,7 @@ from ..services.diagnostics_service import infer_phase, funnel_diagnostics, PHAS
 from ..services.calendar_service import generate_calendar
 from ..services.draft_service import (generate_drafts, generate_guda_drafts,
                                       generate_story_draft, generate_profile_bio)
+from ..services import batch_service
 
 
 @bp.before_request
@@ -83,7 +84,11 @@ def _save_drafts(raw_drafts, client_id, batch_id):
     cta_label = request.form.get("cta_label", "").strip()
     cta_url = request.form.get("cta_url", "").strip()
     offer_lp_id = request.form.get("offer_lp_id") or None
+    # E3-4: フォームでCTAを付けた場合は cta_type を "offer" に補正（本文だけの
+    # 推定より、明示されたオファー導線を優先する）。生成時タグは尊重する。
+    from ..services.draft_service import classify_draft
     for d in raw_drafts:
+        tags = classify_draft(d["text"], cta_label, cta_url)
         draft = Draft(
             client_id=client_id,
             batch_id=batch_id,
@@ -97,6 +102,9 @@ def _save_drafts(raw_drafts, client_id, batch_id):
             cta_label=cta_label,
             cta_url=cta_url,
             offer_lp_id=int(offer_lp_id) if offer_lp_id else None,
+            hook_type=d.get("hook_type", tags["hook_type"]),
+            format_type=d.get("format_type", tags["format_type"]),
+            cta_type=tags["cta_type"],
             generated_by_user_id=current_user.id,
         )
         db.session.add(draft)
@@ -170,6 +178,140 @@ def draft_review(draft_id):
     draft.reviewed = not draft.reviewed
     db.session.commit()
     return redirect(url_for("admin.drafts"))
+
+
+# ──────────────────────────────────────────────
+# E3-4: 勝ち型インサイト（自己改善ループ）
+# ──────────────────────────────────────────────
+# ドラフトの hook_type/format_type/cta_type と、投稿済み予約の実績（インプ）を
+# 突き合わせ、型別の「平均インプ×件数」で勝ち型を可視化する。
+# 実測ノウハウ「問いかけ＋CTA型は伸び、列挙・CTA無しは失速」を、当該clientの
+# 実データで裏取りして次の生成に反映する。データが無い項目は「観測待ち」。
+# 捏造しない（インプ未計測の投稿は集計に入れない）。
+
+@bp.route("/insights")
+def insights():
+    client_id = _client_id()
+    from ..services.draft_service import (HOOK_TYPE_LABELS, FORMAT_TYPE_LABELS,
+                                          CTA_TYPE_LABELS)
+
+    # 投稿済み（posted）かつインプ計測済み（impressions が NULL でない）の予約投稿を、
+    # 紐づくドラフトのタグと突き合わせる。draft_id が無い投稿は集計対象外。
+    rows = (db.session.query(ScheduledPost, Draft)
+            .join(Draft, ScheduledPost.draft_id == Draft.id)
+            .filter(ScheduledPost.client_id == client_id,
+                    ScheduledPost.status == "posted",
+                    ScheduledPost.impressions.isnot(None))
+            .all())
+
+    def _agg(attr, labels):
+        buckets = {}
+        for sp, dr in rows:
+            key = getattr(dr, attr) or ""
+            if not key:
+                key = "unclassified"
+            b = buckets.setdefault(key, {"count": 0, "total_imp": 0})
+            b["count"] += 1
+            b["total_imp"] += sp.impressions or 0
+        ranking = []
+        for key, b in buckets.items():
+            label = labels.get(key, "未分類" if key == "unclassified" else key)
+            ranking.append({
+                "key": key, "label": label, "count": b["count"],
+                "avg_imp": round(b["total_imp"] / b["count"], 1) if b["count"] else 0,
+            })
+        ranking.sort(key=lambda r: r["avg_imp"], reverse=True)
+        return ranking
+
+    hook_rank = _agg("hook_type", HOOK_TYPE_LABELS)
+    format_rank = _agg("format_type", FORMAT_TYPE_LABELS)
+    cta_rank = _agg("cta_type", CTA_TYPE_LABELS)
+
+    total_measured = len(rows)
+    total_drafts = Draft.query.filter_by(client_id=client_id).count()
+
+    # 「次の生成で使うと良い型」の提示は、実データがある軸だけ（捏造しない）。
+    best = {}
+    if hook_rank:
+        best["hook"] = hook_rank[0]
+    if format_rank:
+        best["format"] = format_rank[0]
+    if cta_rank:
+        best["cta"] = cta_rank[0]
+
+    return render_template("admin/insights.html",
+                           hook_rank=hook_rank, format_rank=format_rank,
+                           cta_rank=cta_rank, total_measured=total_measured,
+                           total_drafts=total_drafts, best=best)
+
+
+# ──────────────────────────────────────────────
+# E3-7: 日次バッチ生成（24本・時報型）＋同文重複検出
+# ──────────────────────────────────────────────
+# ドクトリン: 毎時24本・時間帯×フォーマット配分・全て別内容（同文=スパム判定）。
+# ここでは本文を生成→重複検出→ScheduledPost を status="pending"（承認待ち）で積むだけ。
+# 実投稿はしない（承認ゲートは E6-5 が担保）。同文（exact）は絶対に積まない。
+
+@bp.route("/batch-generate", methods=["GET", "POST"])
+def batch_generate():
+    client_id = _client_id()
+    profile = ProfileConcept.query.filter_by(client_id=client_id).first_or_404()
+    vocab = load_vocab()
+    profile_dict = {
+        "genre": profile.genre, "who": profile.who,
+        "what": profile.what, "how": profile.how,
+        "position": profile.position, "achievement": profile.achievement,
+    }
+
+    if request.method == "POST":
+        # 対象日（既定は当日）。過去日でも承認待ちで積むだけなので安全。
+        raw_date = request.form.get("target_date", "").strip()
+        try:
+            target_date = datetime.strptime(raw_date, "%Y-%m-%d").date() if raw_date else date.today()
+        except ValueError:
+            flash("日付の形式が正しくありません（YYYY-MM-DD）。", "warning")
+            return redirect(url_for("admin.batch_generate"))
+
+        # Claude強化は任意（キーが無ければ自動でテンプレ）。既定はチェックボックス。
+        use_claude = request.form.get("use_claude") == "1"
+
+        plan = batch_service.build_batch_plan()
+        items = batch_service.generate_batch(profile_dict, vocab, plan, use_claude=use_claude)
+        report = batch_service.detect_duplicates(items)
+
+        # 同文（exact）は絶対に積まない。近似（near）は警告しつつ積む（別内容として通しうる）。
+        saved = 0
+        for it in items:
+            if it["dup_status"] == "exact":
+                continue
+            scheduled_at = datetime.combine(target_date, time(it["hour"], it["minute"]))
+            post = ScheduledPost(
+                client_id=client_id,
+                platform="x",
+                text=it["text"],
+                scheduled_at=scheduled_at,
+                status=POST_STATUS_PENDING,  # 承認待ち（外部書き込みしない）
+                created_by_user_id=current_user.id,
+            )
+            db.session.add(post)
+            saved += 1
+        db.session.commit()
+
+        flash(f"{target_date.isoformat()} 分として{saved}件を承認待ち（pending）で積みました。", "success")
+        if report["exact"]:
+            flash(f"同文（コピペ）を{report['exact']}件検出し、除外しました。同文は投稿しません。", "danger")
+        if report["near"]:
+            flash(f"酷似（近似重複）が{report['near']}件あります。内容を見直すと安全です。", "warning")
+        return redirect(url_for("admin.batch_generate"))
+
+    # GET: 時間帯配分プレビュー
+    bands = batch_service.band_summary()
+    plan = batch_service.build_batch_plan()
+    claude_ok = batch_service.is_available()
+    today = date.today()
+    return render_template("admin/batch_generate.html",
+                           bands=bands, plan=plan, claude_ok=claude_ok,
+                           today=today, profile=profile)
 
 
 @bp.route("/metrics/log", methods=["GET", "POST"])
@@ -286,6 +428,60 @@ def analytics():
                    "バズる相手と実際に買う見込み客はズレやすいので、"
                    "相談・成約（見込み客/成約指標）と必ずセットで確認しましょう。")
 
+    # ── 主KPIの付け替え（E3-8）──────────────────────────────
+    # 実測: 相互狙いで増やしたフォロワーは "死んだ観客"（到達・相談に繋がらない）。
+    # → 主KPIを「成果に近い指標」= プロフクリック / DM相談 / エンゲージ率 に格上げし、
+    #   フォロワー数は "補助（vanity＝見栄え）指標" として降格表示する。schema変更なし。
+    engagement_val = _latest("engagement_rate_pct")
+    followers_delta_val = _latest("followers_delta_per_day")
+    list_signups_val = _latest("list_signups_per_day")
+
+    # プロフクリックは現状のスキーマに計測列が無い → 捏造せず「観測待ち」で表示。
+    primary_kpis = [
+        {"label": "プロフクリック", "emoji": "🔎",
+         "value": None, "unit": "回",
+         "hint": "プロフィールを見に来た人＝濃い関心。数値連携は観測待ち"},
+        {"label": "DM相談（問い合わせ）", "emoji": "📨",
+         "value": contact_total, "unit": "件",
+         "hint": "実際に相談が来た数＝成果に最も近い指標"
+                 + ("（未読 {}件）".format(contact_unread) if contact_unread else "")},
+        {"label": "エンゲージメント率", "emoji": "❤️",
+         "value": engagement_val, "unit": "%",
+         "hint": "届いた人が反応したか＝到達の濃さ"},
+    ]
+    # フォロワーは vanity（見栄え）指標として降格。
+    vanity_metrics = [
+        {"label": "フォロワー増加", "emoji": "👥",
+         "value": followers_delta_val, "unit": "人/日",
+         "hint": "増えても到達・相談に繋がらなければ “死んだ観客”。あくまで参考値"},
+    ]
+
+    # ── "死んだ観客" インジケータ ──────────────────────────
+    # フォロワーは増えているのに、到達（エンゲージ率）や見込み客（登録・相談）が
+    # 伴っていない状態を検出。判定材料が無ければ「観測待ち」（捏造しない）。
+    dead_audience = None          # None=観測待ち / False=問題なし / True=注意
+    dead_audience_detail = ""
+    if followers_delta_val is None:
+        dead_audience = None
+    elif followers_delta_val <= 0:
+        dead_audience = False     # フォロワーが増えていない → この観点の懸念なし
+    else:
+        # フォロワーは増加中。到達・成果が伴っているか確認する。
+        reach_ok = engagement_val is not None and engagement_val >= 1.0
+        lead_ok = (list_signups_val is not None and list_signups_val > 0) or contact_total > 0
+        if engagement_val is None and list_signups_val is None and contact_total == 0:
+            dead_audience = None   # 判定材料が揃っていない → 観測待ち
+        elif reach_ok or lead_ok:
+            dead_audience = False
+        else:
+            dead_audience = True
+            dead_audience_detail = (
+                "直近でフォロワーは増えています（+{:.1f}人/日）が、"
+                "エンゲージメント率や登録・相談がほとんど動いていません。"
+                "増えたフォロワーが到達・相談に繋がっていない “死んだ観客” の可能性があります。"
+                "相互狙いの数集めより、濃い見込み客に届く発信へ切り替えましょう。"
+                .format(followers_delta_val))
+
     return render_template(
         "admin/analytics.html",
         phase=phase, phase_label=PHASE_LABELS[phase],
@@ -295,6 +491,8 @@ def analytics():
         today_posts=today_posts,
         reach_metrics=reach_metrics, prospect_metrics=prospect_metrics,
         fit_warning=fit_warning, has_metrics=bool(latest),
+        primary_kpis=primary_kpis, vanity_metrics=vanity_metrics,
+        dead_audience=dead_audience, dead_audience_detail=dead_audience_detail,
     )
 
 
@@ -745,6 +943,17 @@ def stripe_product_new():
         return redirect(url_for("admin.stripe_products"))
 
     return render_template("admin/stripe_product_new.html")
+
+
+@bp.route("/purchases")
+def purchases():
+    """E5-1: Stripe Webhook で記録した購入履歴（当該clientの新しい順）。"""
+    client_id = _client_id()
+    items = (Purchase.query
+             .filter_by(client_id=client_id)
+             .order_by(Purchase.created_at.desc())
+             .all())
+    return render_template("admin/purchases.html", purchases=items)
 
 
 # ──────────────────────────────────────────────

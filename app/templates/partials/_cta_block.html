@@ -78,4 +78,39 @@
     <div class="text-muted mb-1">プレビュー（本文の末尾に付きます）:</div>
     <div class="bg-white border rounded px-2 py-1 text-primary cta-preview" style="white-space:pre-wrap"></div>
   </div>
+
+  {# E6-7: CTA未設定時のやわらかい警告（ブロックはしない＝任意のまま） #}
+  <div class="alert alert-warning small py-2 mb-0 mt-2 cta-warn d-flex gap-2" style="display:none">
+    <span>⚠️</span>
+    <span>CTAが未設定です。実測で「<strong>問いかけ＋CTA型</strong>」はCTA無しの<strong>約9倍</strong>伸びています。オファー導線を付けるのを推奨します（任意）。</span>
+  </div>
 </div>
+
+{# E6-7: CTA未設定の警告制御（インラインJS・CDN不可・重複読込ガード付き） #}
+<script>
+(function () {
+  if (window.__ctaWarnWired) return;
+  window.__ctaWarnWired = true;
+  function hasCtaTarget(block) {
+    var hiddenUrl = block.querySelector('.cta-url');
+    var lp = block.querySelector('.cta-lp');
+    return (hiddenUrl && hiddenUrl.value.trim() !== '') || (lp && lp.value !== '');
+  }
+  function refresh(block) {
+    var warn = block.querySelector('.cta-warn');
+    if (!warn) return;
+    warn.style.display = hasCtaTarget(block) ? 'none' : '';
+  }
+  function wire() {
+    document.querySelectorAll('.cta-block').forEach(function (block) {
+      // 他JS（syncUrl等）でhidden値が更新された後に判定するため遅延評価
+      var update = function () { setTimeout(function () { refresh(block); }, 0); };
+      block.addEventListener('change', update);
+      block.addEventListener('input', update);
+      refresh(block);
+    });
+  }
+  if (document.readyState !== 'loading') wire();
+  else document.addEventListener('DOMContentLoaded', wire);
+})();
+</script>

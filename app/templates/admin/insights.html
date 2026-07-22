@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}勝ち型インサイト — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">📈 勝ち型インサイト</h2>
+  <a href="{{ url_for('admin.drafts') }}" class="btn btn-outline-secondary btn-sm">投稿文を作るへ</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 投稿を <strong>hook型・フォーマット・CTA有無</strong>でタグ付けし、
+  投稿済みの実績（平均インプレッション）と突き合わせて「伸びる型」を見える化します。
+  実測では「<strong>問いかけ＋CTA型は伸び、列挙・CTA無しは失速（約9倍差）</strong>」。
+  下のランキングは<strong>あなたの実データ</strong>です（数値の捏造はしません）。
+</div>
+
+<p class="text-muted small">
+  集計対象: 投稿済み（posted）かつインプレッション計測済みの投稿
+  <span class="badge bg-secondary">{{ total_measured }}件</span>
+  / 生成済みドラフト <span class="badge bg-light text-dark">{{ total_drafts }}件</span>
+</p>
+
+{% if total_measured == 0 %}
+<div class="text-center py-5 text-muted">
+  <p class="mb-1">まだ<strong>観測待ち</strong>です。</p>
+  <p class="small">
+    ドラフトから予約投稿を作り、投稿後にインプレッションを記録すると、<br>
+    型ごとの平均インプがここに集計され、勝ち型ランキングが表示されます。
+  </p>
+</div>
+{% else %}
+
+{# 次の生成で使うと良い型（実データがある軸のみ提示） #}
+<div class="card border-success mb-4">
+  <div class="card-header bg-success text-white">🏆 次の生成で使うと良い型（実データより）</div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="small text-muted">hook型</div>
+        {% if best.hook %}
+          <div class="fw-bold">{{ best.hook.label }}</div>
+          <div class="small text-muted">平均 {{ "{:,.0f}".format(best.hook.avg_imp) }} imp / {{ best.hook.count }}件</div>
+        {% else %}<div class="text-muted">観測待ち</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted">フォーマット</div>
+        {% if best.format %}
+          <div class="fw-bold">{{ best.format.label }}</div>
+          <div class="small text-muted">平均 {{ "{:,.0f}".format(best.format.avg_imp) }} imp / {{ best.format.count }}件</div>
+        {% else %}<div class="text-muted">観測待ち</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted">CTA</div>
+        {% if best.cta %}
+          <div class="fw-bold">{{ best.cta.label }}</div>
+          <div class="small text-muted">平均 {{ "{:,.0f}".format(best.cta.avg_imp) }} imp / {{ best.cta.count }}件</div>
+        {% else %}<div class="text-muted">観測待ち</div>{% endif %}
+      </div>
+    </div>
+    {% if best.hook and best.cta %}
+    <hr>
+    <div class="small">
+      👉 次の投稿は <strong>{{ best.hook.label }}</strong>
+      {% if best.format %}× <strong>{{ best.format.label }}</strong>{% endif %}
+      × <strong>{{ best.cta.label }}</strong> を軸にすると、直近の実績上いちばん伸びやすい傾向です。
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% macro rank_table(title, ranking) %}
+<div class="col-lg-4">
+  <div class="card h-100">
+    <div class="card-header">{{ title }}</div>
+    <div class="card-body p-0">
+      {% if ranking %}
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr><th>型</th><th class="text-end">平均imp</th><th class="text-end">件数</th></tr>
+        </thead>
+        <tbody>
+          {% for r in ranking %}
+          <tr>
+            <td>
+              {% if loop.first %}<span class="badge bg-success">1位</span> {% endif %}
+              {{ r.label }}
+            </td>
+            <td class="text-end fw-bold">{{ "{:,.0f}".format(r.avg_imp) }}</td>
+            <td class="text-end text-muted">{{ r.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="p-3 text-muted small">観測待ち</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="row g-3">
+  {{ rank_table("hook型 ランキング", hook_rank) }}
+  {{ rank_table("フォーマット ランキング", format_rank) }}
+  {{ rank_table("CTA ランキング", cta_rank) }}
+</div>
+
+<p class="text-muted small mt-3">
+  ※ インプレッション未計測の投稿は集計に含みません（観測できた事実のみ表示）。
+  投稿クリーンアップ画面などでインプを記録すると、集計の精度が上がります。
+</p>
+{% endif %}
+{% endblock %}

@@ -3,10 +3,17 @@ services:
     name: x-unyou-webapp
     runtime: python
     buildCommand: pip install -r requirements.txt
-    # 起動前に ensure-schema でスキーマ差分を冪等に適用してから gunicorn を起動する。
-    # ensure-schema が失敗しても「|| true」で起動は止めない（全断を避ける）。失敗はログに残る。
-    startCommand: python -m flask --app wsgi ensure-schema || true; gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    # 起動前に (1) ensure-schema でスキーマ差分を冪等に適用し、(2) seed-if-empty で
+    # 空DB初回のみ env からマスターを作る。どちらも「|| true」で起動を止めない（全断回避）。
+    startCommand: python -m flask --app wsgi ensure-schema || true; python -m flask --app wsgi seed-if-empty || true; gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     envVars:
+      # --- 本番DB（永続 Postgres）。push一発で ybboost-db を自動プロビジョニングし、
+      #     接続文字列を DATABASE_URL に注入する。手動でのDB作成は不要。
+      #     未設定時（ローカル）は config.py が SQLite にフォールバックする。 ---
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ybboost-db
+          property: connectionString
       - key: SECRET_KEY
         generateValue: true
       - key: ANTHROPIC_API_KEY
@@ -19,3 +26,46 @@ services:
         value: https://x-unyou-webapp.onrender.com
       - key: FLASK_APP
         value: wsgi
+      # --- 空DB初回シード（seed-if-empty）用。両方セットすると初回デプロイで
+      #     master が自動作成される。既にユーザーが居れば無視（冪等）。
+      #     実値はダッシュボードで投入するため sync:false（このファイルには書かない）。 ---
+      - key: MASTER_EMAIL
+        sync: false
+      - key: MASTER_PASSWORD
+        sync: false
+      # --- 生成物の永続ストレージ（E1-3） ---
+      # 既定は local（instance/ 保存＝Render では ephemeral で再起動時に消える）。
+      # 永続化する場合はオーナーが下記に S3 互換ストレージ（推奨: Cloudflare R2）の値を投入する。
+      # 値はダッシュボード側で設定するため sync:false（このファイルには実値を書かない）。
+      - key: STORAGE_PROVIDER
+        sync: false          # 例: "s3"（未設定/"local" ならローカル保存にフォールバック）
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false          # 例: https://<accountid>.r2.cloudflarestorage.com
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_PUBLIC_BASE_URL
+        sync: false          # 公開配信URLの基点（R2 独自ドメイン等）
+      # - key: CLOUDINARY_URL   # 任意経路（画像変換が必要になった場合）
+      #   sync: false
+#
+# --- 有料インスタンスで Render Persistent Disk を使う場合の例（無料プランでは不可） ---
+# 無料プランでは disk は付けられない。有料化した場合のみ以下のように instance/ を永続化できる。
+#   disk:
+#     name: instance-data
+#     mountPath: /opt/render/project/src/instance
+#     sizeGB: 1
+# ※ ただし Disk は単一インスタンス限定でスケールしない。配信帯域を考えると
+#   画像/動画は S3 互換オブジェクトストレージ（上の env）を優先すること。
+#
+# --- 本番DB（永続 Postgres）。push一発で自動プロビジョニングされる ---
+# free プランは無料だが「約30日で削除される」制約がある（恒久運用は Starter 以上へ
+# ダッシュボードから1クリックで変更＝オーナー判断）。データ本体はここに永続化される。
+databases:
+  - name: ybboost-db
+    plan: free
+    databaseName: ybboost
+    user: ybboost

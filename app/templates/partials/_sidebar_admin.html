@@ -4,13 +4,16 @@
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.profile' %}active fw-bold{% endif %}" href="{{ url_for('admin.profile') }}">✏️ アカウント設定</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.calendar' %}active fw-bold{% endif %}" href="{{ url_for('admin.calendar') }}">📅 投稿カレンダー</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.drafts' %}active fw-bold{% endif %}" href="{{ url_for('admin.drafts') }}">📝 投稿文を作る</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.insights' %}active fw-bold{% endif %}" href="{{ url_for('admin.insights') }}">📈 勝ち型インサイト</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.metrics_log' %}active fw-bold{% endif %}" href="{{ url_for('admin.metrics_log') }}">📊 数値を記録する</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.metrics_import' %}active fw-bold{% endif %}" href="{{ url_for('admin.metrics_import') }}">📊 メトリクス取込</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.batch_generate' %}active fw-bold{% endif %}" href="{{ url_for('admin.batch_generate') }}">🗓 日次バッチ生成</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.users','admin.user_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.users') }}">👥 メンバー管理</a></li>
 
     <li class="nav-item mt-2"><span class="nav-link text-muted small px-3 py-1">X 連携</span></li>
     <li class="nav-item"><a class="nav-link {% if 'sns.settings' in (request.endpoint or '') %}active fw-bold{% endif %}" href="{{ url_for('sns.settings') }}">🔗 X連携設定</a></li>
     <li class="nav-item"><a class="nav-link {% if 'sns.schedule' in (request.endpoint or '') %}active fw-bold{% endif %}" href="{{ url_for('sns.schedule_list') }}">📤 今日の投稿</a></li>
+    <li class="nav-item"><a class="nav-link {% if 'sns.engage' in (request.endpoint or '') %}active fw-bold{% endif %}" href="{{ url_for('sns.engage_queue') }}">💬 エンゲージキュー</a></li>
     <li class="nav-item"><a class="nav-link {% if 'sns.cleanup' in (request.endpoint or '') %}active fw-bold{% endif %}" href="{{ url_for('sns.cleanup') }}">🧹 投稿クリーンアップ</a></li>
 
     <li class="nav-item mt-2"><span class="nav-link text-muted small px-3 py-1">X 自動投稿</span></li>
@@ -24,6 +27,7 @@
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.line_steps_list','admin.line_steps_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.line_steps_list') }}">📱 LINEステップ</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.contact_inbox' %}active fw-bold{% endif %}" href="{{ url_for('admin.contact_inbox') }}">📬 お問い合わせ</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint in ('admin.stripe_products','admin.stripe_product_new') %}active fw-bold{% endif %}" href="{{ url_for('admin.stripe_products') }}">💳 Stripe決済</a></li>
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.purchases' %}active fw-bold{% endif %}" href="{{ url_for('admin.purchases') }}">🧾 購入履歴</a></li>
 
     <li class="nav-item mt-3 px-3">
       <div class="small text-muted mb-1">API連携状態</div>

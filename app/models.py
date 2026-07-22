@@ -112,6 +112,12 @@ class Draft(db.Model):
     source = db.Column(db.String(16), default="template")  # claude / template
     text = db.Column(db.Text, nullable=False)
     reviewed = db.Column(db.Boolean, default=False)
+    # E3-4: 自己改善ループ用のタグ（生成時にルールベースで推定）。
+    # 実績（インプ）と突き合わせて勝ち型を可視化するための分類軸。
+    # 後方互換: 既存行は "" のまま（＝未分類）。捏造しない。
+    hook_type = db.Column(db.String(40), default="")     # 問いかけ/数字/権威 等
+    format_type = db.Column(db.String(40), default="")   # 列挙/ハウツー/ストーリー 等
+    cta_type = db.Column(db.String(40), default="")      # オファー/フォロー誘導/なし 等
     video_path = db.Column(db.String(500), nullable=True)  # path to generated video file
     # E6-1: 投稿→オファー導線（CTA）
     cta_label = db.Column(db.String(120), default="")
@@ -210,6 +216,30 @@ class StripeProduct(db.Model):
     created_by = db.relationship("User", foreign_keys=[created_by_user_id])
 
 
+class Purchase(db.Model):
+    """E5-1: Stripe Webhook で受けた購入完了の記録。
+
+    Payment Link / Checkout の決済成立（payment_intent.succeeded 等）を
+    Webhook で受け、購入を1件記録する。stripe_event_id を unique にして
+    冪等性を担保（Stripe は同一イベントを再送しうるため、二重記録しない）。
+    承認ゲートの外側（外部＝Stripe が確定した事実の記録）なので status は
+    既定 "paid"。返金等は将来 refunded を足す想定。
+    """
+    __tablename__ = "purchase"
+    id = db.Column(db.Integer, primary_key=True)
+    # 商品の紐付けが取れない Webhook もあるため client_id は nullable。
+    client_id = db.Column(db.Integer, db.ForeignKey("client.id"), nullable=True, index=True)
+    stripe_event_id = db.Column(db.String(120), unique=True)      # 冪等キー
+    stripe_payment_intent = db.Column(db.String(120), default="")
+    amount = db.Column(db.Integer, nullable=True)                 # 最小通貨単位（JPYは円）
+    currency = db.Column(db.String(10), default="")
+    customer_email = db.Column(db.String(200), default="")
+    product_name = db.Column(db.String(200), default="")
+    status = db.Column(db.String(20), default="paid")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    client = db.relationship("Client", backref=db.backref("purchases", lazy="dynamic"))
+
+
 class Testimonial(db.Model):
     """社会的証明（お客様の声 / 実績 / ロゴ）。kind別必須はルート側で検証。"""
     __tablename__ = "testimonial"
@@ -227,6 +257,76 @@ class Testimonial(db.Model):
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     client = db.relationship("Client", backref=db.backref("testimonials", lazy="dynamic"))
+
+
+class EngagementItem(db.Model):
+    """E3-2: エンゲージメント・キュー（返信下書きの鮮度管理）。
+
+    返信は「いいねの約13.5倍・会話成立で最大75倍」効く一方、リプ下書きは
+    鮮度商品で、貯めてから承認すると対象が古びて失敗する（24h超で陳腐化）。
+    → 鮮度順（対象ツイートの投稿時刻＞下書き作成時刻）に承認提示し、古い
+    下書きは「鮮度切れ」として失効/差し替えを促す。
+
+    承認ゲート: draft → pending → approved → sent（手動でXでリプ後に記録）。
+    どの状態でも自動でXへ書き込みはしない（テンプレファースト・手動送信）。
+    """
+    __tablename__ = "engagement_item"
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("client.id"), nullable=False, index=True)
+    target_url = db.Column(db.String(500), nullable=False)      # 返信先ツイートのURL
+    target_author = db.Column(db.String(120), default="")       # 返信先の投稿者（任意）
+    target_posted_at = db.Column(db.DateTime, nullable=True)     # 対象ツイートの投稿時刻（鮮度の基準）
+    reply_text = db.Column(db.Text, nullable=False, default="")  # 返信下書き
+    status = db.Column(db.String(20), default="draft")          # draft/pending/approved/sent/expired
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    client = db.relationship("Client", backref=db.backref("engagement_items", lazy="dynamic"))
+
+    # 鮮度の基準時刻: 対象ツイートの投稿時刻があればそれ、無ければ下書き作成時刻。
+    @property
+    def freshness_at(self):
+        return self.target_posted_at or self.created_at
+
+    @property
+    def status_label(self):
+        return ENGAGE_STATUS_LABELS.get(self.status, self.status)
+
+
+# E3-2: エンゲージメント・キューの状態（draft → pending → approved → sent / expired）
+ENGAGE_STATUS_DRAFT = "draft"        # 下書き
+ENGAGE_STATUS_PENDING = "pending"    # 承認待ち
+ENGAGE_STATUS_APPROVED = "approved"  # 承認済み（＝Xで手動返信してよい）
+ENGAGE_STATUS_SENT = "sent"          # 送信済み（手動でリプ後に記録）
+ENGAGE_STATUS_EXPIRED = "expired"    # 鮮度切れで失効
+
+ENGAGE_STATUSES = [
+    ENGAGE_STATUS_DRAFT, ENGAGE_STATUS_PENDING, ENGAGE_STATUS_APPROVED,
+    ENGAGE_STATUS_SENT, ENGAGE_STATUS_EXPIRED,
+]
+
+ENGAGE_STATUS_LABELS = {
+    ENGAGE_STATUS_DRAFT: "下書き",
+    ENGAGE_STATUS_PENDING: "承認待ち",
+    ENGAGE_STATUS_APPROVED: "承認済み",
+    ENGAGE_STATUS_SENT: "送信済み",
+    ENGAGE_STATUS_EXPIRED: "鮮度切れ",
+}
+
+# 許可された状態遷移。ここに無い遷移はルート側で拒否する（承認ゲートの強制）。
+ENGAGE_STATUS_TRANSITIONS = {
+    ENGAGE_STATUS_DRAFT: {ENGAGE_STATUS_PENDING, ENGAGE_STATUS_EXPIRED},
+    ENGAGE_STATUS_PENDING: {ENGAGE_STATUS_APPROVED, ENGAGE_STATUS_DRAFT, ENGAGE_STATUS_EXPIRED},
+    ENGAGE_STATUS_APPROVED: {ENGAGE_STATUS_SENT, ENGAGE_STATUS_PENDING, ENGAGE_STATUS_EXPIRED},
+    ENGAGE_STATUS_SENT: set(),
+    ENGAGE_STATUS_EXPIRED: {ENGAGE_STATUS_DRAFT},  # 差し替え時に下書きへ戻せる
+}
+
+
+def can_engage_transition(current, target):
+    """current → target の状態遷移が許可されているか（承認ゲートの強制）。"""
+    return target in ENGAGE_STATUS_TRANSITIONS.get(current or ENGAGE_STATUS_DRAFT, set())
 
 
 PLATFORMS = ["x", "instagram", "tiktok", "youtube"]

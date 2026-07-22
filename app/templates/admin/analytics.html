@@ -127,6 +127,88 @@
 </div>
 {% endif %}
 
+{# ─── 主KPI（成果に近い指標）＝ 画面の主役（E3-8）─── #}
+<div class="card border-success shadow-sm mb-3">
+  <div class="card-header bg-success text-white fw-bold d-flex align-items-center gap-2">
+    🎯 いま一番見るべき指標（成果に近い）
+    <span class="badge bg-light text-success ms-auto">主KPI</span>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted mb-3">
+      フォロワー数ではなく、<strong>プロフクリック・DM相談・エンゲージ率</strong>を主役にします。
+      「相互狙いで増やしたフォロワー」は到達・相談に繋がりにくい（＝見栄えだけの数字）ためです。
+    </p>
+    <div class="row g-3">
+      {% for m in primary_kpis %}
+      <div class="col-md-4">
+        <div class="border border-success rounded p-3 h-100 bg-success bg-opacity-10">
+          <div class="small text-muted">{{ m.emoji }} {{ m.label }}</div>
+          {% if m.value is not none %}
+          <div class="fs-3 fw-bold text-success">{{ m.value | round(1) }}<span class="small text-muted fw-normal"> {{ m.unit }}</span></div>
+          {% else %}
+          <div class="fs-5 fw-bold text-muted">観測待ち</div>
+          {% endif %}
+          <div class="text-muted" style="font-size:0.72rem;">{{ m.hint }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ─── "死んだ観客" インジケータ（該当時のみ／観測待ちは控えめ表示）─── #}
+{% if dead_audience is sameas true %}
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-3">
+  <span class="fs-5">🧟</span>
+  <div class="small mb-0">
+    <strong>“死んだ観客” 注意:</strong> {{ dead_audience_detail }}
+  </div>
+</div>
+{% elif dead_audience is sameas false %}
+<div class="alert alert-success d-flex align-items-start gap-2 mb-3 py-2">
+  <span class="fs-6">✅</span>
+  <div class="small mb-0">
+    フォロワーの増加に対して到達・相談も動いています（“死んだ観客” の兆候なし）。
+  </div>
+</div>
+{% else %}
+<div class="alert alert-light border d-flex align-items-start gap-2 mb-3 py-2">
+  <span class="fs-6">🔎</span>
+  <div class="small text-muted mb-0">
+    “死んだ観客”（増えても到達しないフォロワー）の判定は<strong>観測待ち</strong>です。
+    フォロワー増加・エンゲージ率・登録/相談の指標が揃うと自動で診断します。
+  </div>
+</div>
+{% endif %}
+
+{# ─── 補助指標（vanity＝見栄え）: フォロワーは参考として控えめに ─── #}
+<div class="card border-secondary mb-4">
+  <div class="card-header bg-secondary bg-opacity-10 fw-bold small text-secondary d-flex align-items-center gap-2">
+    👥 参考指標（見栄え／vanity）
+    <span class="badge bg-secondary ms-auto">補助</span>
+  </div>
+  <div class="card-body py-2">
+    <div class="row g-2">
+      {% for m in vanity_metrics %}
+      <div class="col-md-4">
+        <div class="border rounded p-2 h-100">
+          <div class="small text-muted">{{ m.emoji }} {{ m.label }}</div>
+          {% if m.value is not none %}
+          <div class="fs-6 fw-bold text-muted">{{ m.value | round(1) }}<span class="small fw-normal"> {{ m.unit }}</span></div>
+          {% else %}
+          <div class="fs-6 fw-bold text-muted">観測待ち</div>
+          {% endif %}
+          <div class="text-muted" style="font-size:0.72rem;">{{ m.hint }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="small text-muted mb-0 mt-2" style="font-size:0.72rem;">
+      ※ フォロワー数は「見栄え指標」。多くても到達・相談が伴わなければ売上には繋がりません。上の主KPIで判断してください。
+    </p>
+  </div>
+</div>
+
 {# ─── 客層フィット可視化（リーチ指標 / 見込み客・成約指標）─── #}
 <div class="alert alert-danger d-flex align-items-start gap-2 mb-3">
   <span class="fs-5">⚠️</span>

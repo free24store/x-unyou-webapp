@@ -1,5 +1,85 @@
 import random
+import re
 from .claude_client import call_claude
+
+
+# ──────────────────────────────────────────────
+# E3-4: 自己改善ループ用の分類タグ
+# ──────────────────────────────────────────────
+# 実測ノウハウ: 「問いかけ＋CTA型は伸び、列挙・CTA無しは失速（約9倍差）」。
+# → ドラフトを hook型/format/CTA有無で軽くタグ付けし、実績（インプ）と
+#   突き合わせて勝ち型を可視化する。分類はルールベース（外部API不要）。
+#   誇大な判定はせず、判別できないものは素直に既定カテゴリへ寄せる。
+
+HOOK_TYPE_LABELS = {
+    "question": "問いかけ型",
+    "number": "数字型",
+    "curiosity": "好奇心型",
+    "authority": "権威・実績型",
+    "statement": "断定型",
+}
+FORMAT_TYPE_LABELS = {
+    "list": "列挙型",
+    "howto": "ハウツー型",
+    "story": "ストーリー型",
+    "single": "単文型",
+}
+CTA_TYPE_LABELS = {
+    "offer": "オファー導線あり",
+    "follow": "フォロー誘導",
+    "action": "行動喚起",
+    "none": "CTAなし",
+}
+
+
+def classify_draft(text: str, cta_label: str = "", cta_url: str = "") -> dict:
+    """ドラフト本文（＋CTA設定）から hook/format/cta を推定してタグを返す。
+
+    ルールベースの軽い分類。外部APIには一切依存しない。
+    返り値: {"hook_type": ..., "format_type": ..., "cta_type": ...}
+    """
+    t = text or ""
+
+    # hook_type: 冒頭〜全体の訴求型
+    if "？" in t or "?" in t:
+        hook = "question"     # 問いかけ型（伸びやすい）
+    elif any(k in t for k in ("実は", "驚", "衝撃", "禁断", "秘密", "知らない", "ヤバ")):
+        hook = "curiosity"    # 好奇心型
+    elif any(k in t for k in ("実績", "証明", "達成", "第一人者", "権威", "年収", "月収")):
+        hook = "authority"    # 権威・実績型
+    elif re.search(r"\d", t):
+        hook = "number"       # 数字型
+    else:
+        hook = "statement"    # 断定型
+
+    # format_type: 本文の構造
+    bullet_count = t.count("・") + len(re.findall(r"(?m)^\s*[0-9①-⑨]+[\.\)、]", t))
+    if bullet_count >= 2:
+        fmt = "list"          # 列挙型（CTA無しだと失速しやすい）
+    elif any(k in t for k in ("ステップ", "手順", "やり方", "方法", "コツ")):
+        fmt = "howto"         # ハウツー型
+    elif len(t) >= 140:
+        fmt = "story"         # 長文/ストーリー型
+    else:
+        fmt = "single"        # 単文型
+
+    # cta_type: CTAの有無・種類。フォーム側のCTA設定が最優先。
+    if (cta_label or "").strip() or (cta_url or "").strip():
+        cta = "offer"         # オファー導線あり（LP/セールス等）
+    elif any(k in t for k in ("フォロー", "プロフィール", "見逃さない", "続きが気になる")):
+        cta = "follow"        # フォロー誘導
+    elif "→" in t and any(k in t for k in ("見て", "チェック", "登録", "こちら", "DM", "リンク", "詳しく")):
+        cta = "action"        # 行動喚起
+    else:
+        cta = "none"          # CTAなし（失速要因）
+
+    return {"hook_type": hook, "format_type": fmt, "cta_type": cta}
+
+
+def _tag(draft: dict) -> dict:
+    """生成結果 dict に分類タグを付与して返す（生成ロジックは壊さない）。"""
+    draft.update(classify_draft(draft.get("text", "")))
+    return draft
 
 
 def template_draft(profile, hook, target, reinforcement, edu):
@@ -47,7 +127,7 @@ def generate_drafts(count: int, profile: dict, vocab: dict, education_id: str = 
             text = template_draft(profile, hook, target, reinforcement, edu)
             source = "template"
 
-        drafts.append({
+        drafts.append(_tag({
             "n": i + 1,
             "hook": hook,
             "target": target,
@@ -56,7 +136,7 @@ def generate_drafts(count: int, profile: dict, vocab: dict, education_id: str = 
             "source": source,
             "text": text.strip(),
             "draft_type": "normal",
-        })
+        }))
     return drafts
 
 
@@ -94,7 +174,7 @@ def generate_guda_drafts(guda_ids: list, profile: dict, vocab: dict) -> list:
             )
             source = "template"
 
-        drafts.append({
+        drafts.append(_tag({
             "n": i + 1,
             "hook": f"グダ消し: {guda['label']}",
             "target": guda["label"],
@@ -104,7 +184,7 @@ def generate_guda_drafts(guda_ids: list, profile: dict, vocab: dict) -> list:
             "text": text.strip(),
             "draft_type": "guda",
             "guda_id": gid,
-        })
+        }))
     return drafts
 
 
@@ -141,7 +221,7 @@ def generate_story_draft(story: dict, profile: dict) -> dict:
         )
         source = "template"
 
-    return {
+    return _tag({
         "n": 1,
         "hook": f"ストーリー: {ki[:20]}…",
         "target": "ストーリー型",
@@ -150,7 +230,7 @@ def generate_story_draft(story: dict, profile: dict) -> dict:
         "source": source,
         "text": text.strip(),
         "draft_type": "story",
-    }
+    })
 
 
 def generate_profile_bio(profile: dict) -> str:

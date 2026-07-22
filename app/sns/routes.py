@@ -21,6 +21,10 @@ from ..models import (
     POST_STATUS_PENDING, POST_STATUS_APPROVED, POST_STATUS_POSTED,
     POST_STATUS_FAILED, POST_STATUS_CANCELLED, POST_STATUS_DELETED,
     POST_STATUS_LABELS, can_transition,
+    EngagementItem,
+    ENGAGE_STATUS_DRAFT, ENGAGE_STATUS_PENDING, ENGAGE_STATUS_APPROVED,
+    ENGAGE_STATUS_SENT, ENGAGE_STATUS_EXPIRED,
+    ENGAGE_STATUS_LABELS, can_engage_transition,
 )
 from ..services.video_service import generate_story_video, generate_draft_video
 from ..services.offer_service import resolve_offer_url, compose_with_cta
@@ -756,3 +760,226 @@ def cleanup_mark_deleted(post_id):
     db.session.commit()
     flash("削除済みにしました。", "success")
     return redirect(url_for("sns.cleanup"))
+
+
+# ---------------------------------------------------------------------------
+# E3-2: エンゲージメント・キュー（鮮度順・失効）
+#
+# 返信は「いいねの約13.5倍・会話成立で最大75倍」効く一方、リプ下書きは
+# 鮮度商品。貯めてから承認すると対象ツイートが古びて失敗する（24h超で陳腐化）。
+# → 鮮度順（対象ツイートの投稿時刻 ＞ 下書き作成時刻）に承認提示し、古い
+#   draft / pending は「鮮度切れ」として失効/差し替えを促す。
+#
+# 承認ゲート: draft → pending → approved → sent。どの状態でも自動で X へ
+# 書き込みはしない。approved は target_url への「Xで返信」リンクで手動送信に倒す。
+# ---------------------------------------------------------------------------
+
+# draft / pending がこの時間を過ぎたら「鮮度切れ」とみなす（既定24h）。
+# 環境変数で運用調整できるが、既定は必ず24時間。
+DEFAULT_ENGAGE_FRESH_HOURS = 24
+
+
+def engage_fresh_hours():
+    """リプ下書きの鮮度上限（時間）。既定24h。"""
+    raw = os.environ.get("ENGAGE_FRESH_HOURS", "")
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_ENGAGE_FRESH_HOURS
+    return val if val > 0 else DEFAULT_ENGAGE_FRESH_HOURS
+
+
+def _is_engage_stale(item, now, fresh_hours):
+    """draft / pending が鮮度上限を過ぎているか（＝陳腐化して差し替え推奨）。
+
+    approved / sent / expired は判定対象外（承認済みは既に手を打つ段階、
+    失効/送信済みは終端）。基準は created_at（下書きを作ってからの経過）。
+    """
+    if item.status not in (ENGAGE_STATUS_DRAFT, ENGAGE_STATUS_PENDING):
+        return False
+    base = item.created_at or now
+    return (now - base) > timedelta(hours=fresh_hours)
+
+
+def _owned_engage_or_403(item_id):
+    """テナント整合を確認して EngagementItem を返す。"""
+    item = EngagementItem.query.get_or_404(item_id)
+    if item.client_id != _client_id():
+        abort(403)
+    return item
+
+
+def _engage_tweet_reply_url(target_url):
+    """対象ツイートを開くURL（手動で「返信」するための導線）。実送信はしない。"""
+    return (target_url or "").strip()
+
+
+@bp.route("/engage")
+def engage_queue():
+    """エンゲージ・キュー一覧（鮮度順）。
+
+    並び順: 対象ツイートの投稿時刻（target_posted_at）が新しい順。無ければ
+    下書き作成時刻（created_at）で代替（SQL の COALESCE で鮮度順に統一）。
+    終端（sent / expired）は下に沈める。
+    """
+    from sqlalchemy import func, case
+
+    client_id = _client_id()
+    now = datetime.utcnow()
+    fresh_hours = engage_fresh_hours()
+
+    freshness = func.coalesce(EngagementItem.target_posted_at, EngagementItem.created_at)
+    # 対応中（draft/pending/approved）を上に、終端（sent/expired）を下に。
+    terminal_rank = case(
+        (EngagementItem.status.in_((ENGAGE_STATUS_SENT, ENGAGE_STATUS_EXPIRED)), 1),
+        else_=0,
+    )
+    items = (EngagementItem.query
+             .filter_by(client_id=client_id)
+             .order_by(terminal_rank.asc(), freshness.desc())
+             .all())
+
+    active = [i for i in items if i.status not in (ENGAGE_STATUS_SENT, ENGAGE_STATUS_EXPIRED)]
+    stale_count = sum(1 for i in active if _is_engage_stale(i, now, fresh_hours))
+
+    return render_template("sns/engage_queue.html",
+                           items=items,
+                           now=now,
+                           fresh_hours=fresh_hours,
+                           is_stale=lambda i: _is_engage_stale(i, now, fresh_hours),
+                           reply_url=_engage_tweet_reply_url,
+                           status_labels=ENGAGE_STATUS_LABELS,
+                           pending_count=sum(1 for i in items if i.status == ENGAGE_STATUS_PENDING),
+                           stale_count=stale_count)
+
+
+@bp.route("/engage/new", methods=["POST"])
+def engage_new():
+    """リプ下書きを追加する（既定 draft）。実送信はしない。"""
+    client_id = _client_id()
+    target_url = request.form.get("target_url", "").strip()
+    target_author = request.form.get("target_author", "").strip()
+    reply_text = request.form.get("reply_text", "").strip()
+    posted_at_str = request.form.get("target_posted_at", "").strip()
+
+    if not target_url:
+        flash("返信先ツイートのURLを入力してください。", "danger")
+        return redirect(url_for("sns.engage_queue"))
+
+    target_posted_at = None
+    if posted_at_str:
+        try:
+            target_posted_at = datetime.strptime(posted_at_str, "%Y-%m-%dT%H:%M")
+        except ValueError:
+            flash("対象ツイートの投稿時刻の形式が不正です（無視して登録しました）。", "warning")
+
+    item = EngagementItem(
+        client_id=client_id,
+        target_url=target_url,
+        target_author=target_author,
+        target_posted_at=target_posted_at,
+        reply_text=reply_text,
+        status=ENGAGE_STATUS_DRAFT,
+        created_by_user_id=current_user.id,
+    )
+    db.session.add(item)
+    db.session.commit()
+    flash("リプ下書きを追加しました。鮮度が高いうちに承認・返信しましょう。", "success")
+    return redirect(url_for("sns.engage_queue"))
+
+
+@bp.route("/engage/<int:item_id>/edit", methods=["POST"])
+def engage_edit(item_id):
+    """下書き内容を編集する（draft / pending / expired のみ。approved/sent は不可）。"""
+    item = _owned_engage_or_403(item_id)
+    if item.status in (ENGAGE_STATUS_APPROVED, ENGAGE_STATUS_SENT):
+        flash("承認済み・送信済みの項目は編集できません。", "warning")
+        return redirect(url_for("sns.engage_queue"))
+
+    target_url = request.form.get("target_url", "").strip()
+    if not target_url:
+        flash("返信先ツイートのURLは必須です。", "danger")
+        return redirect(url_for("sns.engage_queue"))
+    item.target_url = target_url
+    item.target_author = request.form.get("target_author", "").strip()
+    item.reply_text = request.form.get("reply_text", "").strip()
+
+    posted_at_str = request.form.get("target_posted_at", "").strip()
+    if posted_at_str:
+        try:
+            item.target_posted_at = datetime.strptime(posted_at_str, "%Y-%m-%dT%H:%M")
+        except ValueError:
+            flash("対象ツイートの投稿時刻の形式が不正です（変更しませんでした）。", "warning")
+    else:
+        item.target_posted_at = None
+    db.session.commit()
+    flash("下書きを更新しました。", "success")
+    return redirect(url_for("sns.engage_queue"))
+
+
+@bp.route("/engage/<int:item_id>/submit", methods=["POST"])
+def engage_submit(item_id):
+    """承認依頼: draft → pending。"""
+    item = _owned_engage_or_403(item_id)
+    if not can_engage_transition(item.status, ENGAGE_STATUS_PENDING):
+        flash(f"この項目は承認依頼できません（現在: {ENGAGE_STATUS_LABELS.get(item.status, item.status)}）。", "warning")
+        return redirect(url_for("sns.engage_queue"))
+    if not (item.reply_text or "").strip():
+        flash("返信本文が空です。下書きを書いてから承認依頼してください。", "warning")
+        return redirect(url_for("sns.engage_queue"))
+    item.status = ENGAGE_STATUS_PENDING
+    db.session.commit()
+    flash("承認待ちにしました。", "success")
+    return redirect(url_for("sns.engage_queue"))
+
+
+@bp.route("/engage/<int:item_id>/approve", methods=["POST"])
+def engage_approve(item_id):
+    """承認: pending → approved。承認済みは「Xで返信」リンクで手動送信に倒す。"""
+    item = _owned_engage_or_403(item_id)
+    if not can_engage_transition(item.status, ENGAGE_STATUS_APPROVED):
+        flash(f"この項目は承認できません（現在: {ENGAGE_STATUS_LABELS.get(item.status, item.status)}）。", "warning")
+        return redirect(url_for("sns.engage_queue"))
+    item.status = ENGAGE_STATUS_APPROVED
+    db.session.commit()
+    flash("承認しました。鮮度が高いうちに X で手動返信し「送信済み」にしてください。", "success")
+    return redirect(url_for("sns.engage_queue"))
+
+
+@bp.route("/engage/<int:item_id>/expire", methods=["POST"])
+def engage_expire(item_id):
+    """失効: draft / pending / approved → expired（鮮度切れ・見送り）。"""
+    item = _owned_engage_or_403(item_id)
+    if not can_engage_transition(item.status, ENGAGE_STATUS_EXPIRED):
+        flash(f"この項目は失効できません（現在: {ENGAGE_STATUS_LABELS.get(item.status, item.status)}）。", "warning")
+        return redirect(url_for("sns.engage_queue"))
+    item.status = ENGAGE_STATUS_EXPIRED
+    db.session.commit()
+    flash("鮮度切れとして失効にしました。", "warning")
+    return redirect(url_for("sns.engage_queue"))
+
+
+@bp.route("/engage/<int:item_id>/revise", methods=["POST"])
+def engage_revise(item_id):
+    """差し替え: expired → draft（内容を作り直して再挑戦する）。"""
+    item = _owned_engage_or_403(item_id)
+    if not can_engage_transition(item.status, ENGAGE_STATUS_DRAFT):
+        flash(f"この項目は差し替えできません（現在: {ENGAGE_STATUS_LABELS.get(item.status, item.status)}）。", "warning")
+        return redirect(url_for("sns.engage_queue"))
+    item.status = ENGAGE_STATUS_DRAFT
+    db.session.commit()
+    flash("下書きに戻しました。内容を差し替えて再挑戦できます。", "success")
+    return redirect(url_for("sns.engage_queue"))
+
+
+@bp.route("/engage/<int:item_id>/mark-sent", methods=["POST"])
+def engage_mark_sent(item_id):
+    """送信済みマーク: approved → sent。X での手動返信後に記録する（外部書き込みなし）。"""
+    item = _owned_engage_or_403(item_id)
+    if not can_engage_transition(item.status, ENGAGE_STATUS_SENT):
+        flash(f"この項目は送信済みにできません（現在: {ENGAGE_STATUS_LABELS.get(item.status, item.status)}）。", "warning")
+        return redirect(url_for("sns.engage_queue"))
+    item.status = ENGAGE_STATUS_SENT
+    db.session.commit()
+    flash("送信済みにしました。初速リプ回りの1件です。", "success")
+    return redirect(url_for("sns.engage_queue"))

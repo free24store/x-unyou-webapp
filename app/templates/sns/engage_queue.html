@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}エンゲージキュー{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">💬 エンゲージキュー</h4>
+  <a href="{{ url_for('sns.schedule_list') }}" class="btn btn-outline-secondary btn-sm">← 予約投稿へ</a>
+</div>
+
+<div class="alert alert-info small mb-3">
+  💡 <strong>Point：</strong>返信は「いいねの約13.5倍・会話成立で最大75倍」効きます。
+  ただし<strong>リプ下書きは鮮度商品</strong>。貯めてから承認すると対象ツイートが古びて失敗します（{{ fresh_hours }}時間超で陳腐化）。
+  <strong>鮮度が高い順</strong>に承認・返信し、古いものは失効/差し替えましょう。
+  <br>👉 自分の<strong>投稿後30〜60分の初速リプ回り</strong>を1セットにすると伸びます。
+  {% if stale_count %}
+  <br><span class="text-danger fw-bold">⏳ 鮮度切れ {{ stale_count }} 件</span> — 差し替え or 失効を検討してください。
+  {% endif %}
+</div>
+
+{# ---- 新規リプ下書きを追加 ---- #}
+<div class="card mb-4">
+  <div class="card-header"><strong>リプ下書きを追加</strong></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('sns.engage_new') }}" class="row g-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-7">
+        <label class="form-label small mb-0">返信先ツイートURL <span class="text-danger">*</span></label>
+        <input type="url" name="target_url" class="form-control form-control-sm" placeholder="https://x.com/.../status/123..." required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0">相手（任意）</label>
+        <input type="text" name="target_author" class="form-control form-control-sm" placeholder="@account">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-0">対象の投稿時刻</label>
+        <input type="datetime-local" name="target_posted_at" class="form-control form-control-sm">
+      </div>
+      <div class="col-12">
+        <label class="form-label small mb-0">返信本文（下書き）</label>
+        <textarea name="reply_text" rows="2" class="form-control form-control-sm" placeholder="相手の文脈を拾った一言＋価値のある返信を…"></textarea>
+      </div>
+      <div class="col-12">
+        <button type="submit" class="btn btn-sm btn-primary">＋ 下書きを追加</button>
+        <span class="small text-muted ms-2">※ 追加＝draft。承認しても自動送信はしません（Xで手動返信）。</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ---- キュー（鮮度順） ---- #}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>キュー（鮮度順）</strong>
+    <span class="small text-muted">承認待ち {{ pending_count }} 件</span>
+  </div>
+  <div class="card-body">
+    {% if items %}
+    <div class="d-flex flex-column gap-2">
+      {% for i in items %}
+      {% set stale = is_stale(i) %}
+      <div class="border rounded p-2 {% if stale %}border-danger bg-danger-subtle{% elif i.status in ('sent','expired') %}bg-light{% endif %}">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="small">
+            {# 状態バッジ #}
+            {% if i.status == 'draft' %}<span class="badge bg-secondary">下書き</span>
+            {% elif i.status == 'pending' %}<span class="badge bg-warning text-dark">承認待ち</span>
+            {% elif i.status == 'approved' %}<span class="badge bg-success">承認済み</span>
+            {% elif i.status == 'sent' %}<span class="badge bg-primary">送信済み</span>
+            {% elif i.status == 'expired' %}<span class="badge bg-dark">鮮度切れ</span>
+            {% else %}<span class="badge bg-secondary">{{ status_labels.get(i.status, i.status) }}</span>{% endif %}
+            {% if stale %}<span class="badge bg-danger">⏳ 鮮度切れ</span>{% endif %}
+            {% if i.target_author %}<span class="text-muted ms-1">→ {{ i.target_author }}</span>{% endif %}
+          </div>
+          <div class="small text-muted text-nowrap">
+            鮮度基準 {{ i.freshness_at.strftime('%m/%d %H:%M') if i.freshness_at else '-' }}
+          </div>
+        </div>
+
+        <div class="mt-1">
+          <a href="{{ i.target_url }}" target="_blank" rel="noopener" class="small">🔗 対象ツイートを開く ↗</a>
+        </div>
+        <div class="mt-1 small" style="white-space:pre-wrap;">{{ i.reply_text or '（本文未入力）' }}</div>
+
+        {% if stale %}
+        <div class="small text-danger mt-1">⏳ 下書き作成から {{ fresh_hours }}時間超。対象が古びています。差し替え or 失効を推奨。</div>
+        {% endif %}
+
+        {# ---- 操作 ---- #}
+        <div class="mt-2 d-flex flex-wrap gap-1">
+          {% if i.status == 'draft' %}
+          <form method="post" action="{{ url_for('sns.engage_submit', item_id=i.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-warning">承認依頼</button>
+          </form>
+          {% elif i.status == 'pending' %}
+          <form method="post" action="{{ url_for('sns.engage_approve', item_id=i.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-success">✓ 承認</button>
+          </form>
+          {% elif i.status == 'approved' %}
+          <a href="{{ reply_url(i.target_url) }}" target="_blank" rel="noopener" class="btn btn-sm btn-primary">Xで返信 ↗</a>
+          <form method="post" action="{{ url_for('sns.engage_mark_sent', item_id=i.id) }}" class="d-inline"
+                onsubmit="return confirm('X上で返信しましたか？「送信済み」に更新します。')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-primary">送信済みにする</button>
+          </form>
+          {% elif i.status == 'expired' %}
+          <form method="post" action="{{ url_for('sns.engage_revise', item_id=i.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-secondary">差し替え（下書きへ）</button>
+          </form>
+          {% endif %}
+
+          {% if i.status in ('draft', 'pending', 'approved') %}
+          <form method="post" action="{{ url_for('sns.engage_expire', item_id=i.id) }}" class="d-inline"
+                onsubmit="return confirm('鮮度切れとして失効にします。よろしいですか？')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-dark">失効</button>
+          </form>
+          {% endif %}
+
+          {% if i.status in ('draft', 'pending', 'expired') %}
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#edit-{{ i.id }}">編集</button>
+          {% endif %}
+        </div>
+
+        {# ---- 編集フォーム（折りたたみ） ---- #}
+        {% if i.status in ('draft', 'pending', 'expired') %}
+        <div class="collapse mt-2" id="edit-{{ i.id }}">
+          <form method="post" action="{{ url_for('sns.engage_edit', item_id=i.id) }}" class="row g-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-7">
+              <input type="url" name="target_url" class="form-control form-control-sm" value="{{ i.target_url }}" required>
+            </div>
+            <div class="col-md-3">
+              <input type="text" name="target_author" class="form-control form-control-sm" value="{{ i.target_author or '' }}" placeholder="@account">
+            </div>
+            <div class="col-md-2">
+              <input type="datetime-local" name="target_posted_at" class="form-control form-control-sm"
+                     value="{{ i.target_posted_at.strftime('%Y-%m-%dT%H:%M') if i.target_posted_at else '' }}">
+            </div>
+            <div class="col-12">
+              <textarea name="reply_text" rows="2" class="form-control form-control-sm">{{ i.reply_text or '' }}</textarea>
+            </div>
+            <div class="col-12">
+              <button class="btn btn-sm btn-primary">保存</button>
+            </div>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info mb-0 small">まだリプ下書きがありません。上のフォームから追加してください。</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}日次バッチ生成 — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">🕐 日次バッチ生成（24本・時報型）</h2>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong>
+  Xは「毎時1本・1日24本・時報型」が基本。<strong>全て別内容</strong>にするのが鉄則で、
+  同じ文のコピペは<strong>スパム判定</strong>されます。ここでは時間帯×フォーマット配分に沿って
+  24本を自動生成し、<strong>同文（コピペ）を検出して除外</strong>したうえで、
+  <strong>承認待ち（pending）</strong>として予約に積みます。実投稿はしません（承認は別画面で）。
+</div>
+
+<div class="alert {{ 'alert-success' if claude_ok else 'alert-secondary' }} py-2 small">
+  {% if claude_ok %}
+    ✅ Claude連携あり：本文をAIで強化します（各投稿を独自の切り口に）。
+  {% else %}
+    📝 Claude未連携：時間帯別のテンプレ雛形で生成します（キー未設定でも動作）。
+  {% endif %}
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header fw-bold">時間帯 × フォーマット配分</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>時間帯</th>
+              <th class="text-center">枠数</th>
+              <th>フォーマット</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in bands %}
+            <tr>
+              <td>{{ b.label }}<br><span class="text-muted small">{{ b.hour_range }}</span></td>
+              <td class="text-center">{{ b.count }}</td>
+              <td>
+                {% for f in b.formats %}
+                  <span class="badge bg-primary-subtle text-primary-emphasis border">{{ f }}</span>
+                {% endfor %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light">
+            <tr><th>合計</th><th class="text-center">{{ plan|length }}</th><th></th></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <details class="mt-3">
+      <summary class="text-muted small">24枠の割り当てを見る</summary>
+      <div class="d-flex flex-wrap gap-1 mt-2">
+        {% for slot in plan %}
+        <span class="badge bg-light text-dark border">
+          {{ "%02d"|format(slot.hour) }}:00 {{ slot.format_label }}
+        </span>
+        {% endfor %}
+      </div>
+    </details>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-body">
+        <form method="POST" id="batch-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="mb-3">
+            <label class="form-label fw-bold">対象日</label>
+            <input type="date" name="target_date" class="form-control"
+                   value="{{ today.isoformat() }}">
+            <div class="form-text">その日の各時0分に24本を承認待ちで積みます。</div>
+          </div>
+
+          {% if claude_ok %}
+          <div class="mb-3 form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="use_claude" value="1" id="use-claude" checked>
+            <label class="form-check-label" for="use-claude">Claudeで本文を強化する（時間がかかります）</label>
+          </div>
+          {% endif %}
+
+          <div class="border rounded p-3 mb-3 bg-light small">
+            <strong>使用するプロフィール：</strong><br>
+            発信テーマ: {{ profile.genre or '未設定' }}<br>
+            ターゲット: {{ profile.who or '未設定' }}
+            <a href="{{ url_for('admin.profile') }}" class="ms-1">✏️ 変更</a>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100" id="submit-btn">
+            ✨ 24本を生成して承認待ちに積む
+          </button>
+          <div class="form-text mt-2">
+            同文（コピペ）は自動で除外されます。積んだ投稿は
+            <a href="{{ url_for('admin.analytics') }}">分析画面</a>の「今日の予定」で確認・承認できます。
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="alert alert-warning mt-3 small mb-0">
+      ⚠️ <strong>同文禁止：</strong>同じ文を並べると凍結/シャドウバンの原因に。
+      生成後は近似重複の警告も確認し、初速のリプ回り（投稿直後の反応）とセットで運用してください。
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('batch-form').addEventListener('submit', function() {
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 生成中です（しばらくお待ちください）';
+});
+</script>
+{% endblock %}

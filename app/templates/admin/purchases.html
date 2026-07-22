@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}購入履歴 — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">💳 購入履歴</h2>
+  <a href="{{ url_for('admin.stripe_products') }}" class="btn btn-outline-secondary btn-sm">決済リンク管理へ</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> Stripe の Webhook（決済成立通知）を受けて自動記録された購入です。
+  記録には <code>STRIPE_WEBHOOK_SECRET</code> の設定が必要です。未設定でも画面は安全に動作します。
+</div>
+
+{% if purchases %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>日時</th><th>商品名</th><th>金額</th><th>顧客メール</th>
+        <th>状態</th><th>PaymentIntent</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in purchases %}
+      <tr>
+        <td class="small text-muted">{{ p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—' }}</td>
+        <td>{{ p.product_name or '—' }}</td>
+        <td>
+          {% if p.amount is not none %}
+            {% if p.currency|lower == 'jpy' %}¥{{ "{:,}".format(p.amount) }}
+            {% else %}{{ "{:,}".format(p.amount) }} {{ (p.currency or '').upper() }}{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="small">{{ p.customer_email or '—' }}</td>
+        <td><span class="badge bg-success">{{ p.status }}</span></td>
+        <td class="small text-muted">{{ p.stripe_payment_intent or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <p>まだ購入記録がありません。</p>
+  <p class="small">Stripe の Webhook 送信先に <code>/webhook/stripe</code> を設定し、<code>STRIPE_WEBHOOK_SECRET</code> を .env に追加すると、決済成立が自動で記録されます。</p>
+</div>
+{% endif %}
+{% endblock %}

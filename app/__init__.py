@@ -134,6 +134,10 @@ def create_app():
             ("draft", "cta_label", "VARCHAR(120) DEFAULT ''"),
             ("draft", "cta_url", "VARCHAR(500) DEFAULT ''"),
             ("draft", "offer_lp_id", "INTEGER"),
+            # E3-4: 自己改善ループ用の分類タグ。既存行は '' のまま（＝未分類）。
+            ("draft", "hook_type", "VARCHAR(40) DEFAULT ''"),
+            ("draft", "format_type", "VARCHAR(40) DEFAULT ''"),
+            ("draft", "cta_type", "VARCHAR(40) DEFAULT ''"),
             ("scheduled_post", "cta_label", "VARCHAR(120) DEFAULT ''"),
             ("scheduled_post", "cta_url", "VARCHAR(500) DEFAULT ''"),
             ("scheduled_post", "offer_lp_id", "INTEGER"),
@@ -206,5 +210,45 @@ def create_app():
         db.session.add(user)
         db.session.commit()
         print(f"マスターユーザー '{email}' を作成しました。")
+
+    @app.cli.command("seed-if-empty")
+    def seed_if_empty():
+        """空DBの初回起動時だけ、env からマスターユーザーを冪等に作成する。
+
+        本番 Postgres は初回デプロイ時にユーザー0件＝誰もログインできない。
+        そこで起動前（render.yaml の startCommand）にこのコマンドを挟み、
+        `MASTER_EMAIL` / `MASTER_PASSWORD`（os.environ）が揃っているときだけ
+        master ユーザーを1人作る。seed-master と同等のロジックを非対話で実行する。
+
+        冪等性（安全側）:
+          - 既にユーザーが1人でも居れば **何もしない**（既存データを壊さない）。
+          - env が無ければ **何もしない**（既存フロー・ローカル開発を壊さない）。
+        いずれもエラーにはせず静かに return する（起動を止めないため）。
+        """
+        from .models import User
+        from werkzeug.security import generate_password_hash
+
+        # 既にユーザーが居れば何もしない（冪等）。
+        if User.query.first() is not None:
+            print("seed-if-empty: 既にユーザーが存在します（スキップ）。")
+            return
+
+        email = (os.environ.get("MASTER_EMAIL") or "").strip()
+        password = os.environ.get("MASTER_PASSWORD") or ""
+        if not email or not password:
+            print("seed-if-empty: MASTER_EMAIL/MASTER_PASSWORD 未設定のためスキップ。")
+            return
+
+        display_name = (os.environ.get("MASTER_DISPLAY_NAME") or "").strip() or "マスター"
+        user = User(
+            email=email,
+            password_hash=generate_password_hash(password, method="pbkdf2:sha256"),
+            role="master",
+            display_name=display_name,
+            is_active=True,
+        )
+        db.session.add(user)
+        db.session.commit()
+        print(f"seed-if-empty: マスターユーザー '{email}' を作成しました。")
 
     return app

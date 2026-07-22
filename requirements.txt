@@ -8,9 +8,17 @@ email-validator
 apscheduler>=3.10,<4
 requests
 gunicorn
+# 本番DB(Postgres)ドライバ。DATABASE_URL が postgresql:// のとき SQLAlchemy が必要とする。
+# 無いと本番で接続失敗＝500。ローカル既定の SQLite では未使用だがインストールされても害はない。
+psycopg2-binary>=2.9,<3
 # 以下はオプション（未設定でも動作します）
 tweepy>=4.16.0
 stripe
+# 生成物の永続ストレージ（S3互換 R2/B2/S3）。envゲート＋遅延importなので未インストールでも起動する。
+# 永続化を有効にする場合のみインストール（コメント解除）。詳細: app/services/storage_service.py
+# boto3
+# Cloudinary経由を使う場合のみ（任意）
+# cloudinary
 # 動画生成（重いためRender無料プランでは除外推奨）
 # Pillow
 # imageio

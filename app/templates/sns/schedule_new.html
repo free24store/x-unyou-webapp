@@ -43,6 +43,16 @@
         <textarea name="text" id="post_text" class="form-control" rows="6"
                   placeholder="投稿内容を入力…&#10;Xは280字まで自動で切り詰めます">{{ pre_text }}</textarea>
         <div class="form-text" id="char_count">0 文字</div>
+
+        <!-- E6-7: 勝ちフォーマットのヒント -->
+        <div class="alert alert-info small d-flex gap-2 py-2 mt-2 mb-0">
+          <span>💡 Point:</span>
+          <div>
+            <div><strong>勝ちフォーマット</strong>：<strong>フック→保持→価値→CTA</strong> の順。1行目のフックが全てです。</div>
+            <div><strong>列挙・CTA無しは失速。</strong>問いかけ（例：あなたの会社、会議に何時間使ってますか？）＋CTAが伸びます。</div>
+            <div class="text-warning mt-1 fmt-hint" style="display:none"></div>
+          </div>
+        </div>
       </div>
 
       <!-- プラットフォーム選択 -->
@@ -197,6 +207,23 @@ function updateCount() {
   charCount.textContent = postText.value.length + ' 文字';
 }
 
+// E6-7: 本文が「問いかけ」か・CTAがあるかを簡易チェックし、控えめなヒントを出す（任意）
+function checkFormat() {
+  const hint = document.querySelector('.fmt-hint');
+  if (!hint) return;
+  const t = postText.value;
+  const hasQuestion = /[？?]\s*$/m.test(t); // ？で終わる行があるか
+  const block = document.querySelector('.cta-block');
+  const hiddenUrl = block ? block.querySelector('.cta-url') : null;
+  const lp = block ? block.querySelector('.cta-lp') : null;
+  const hasCta = (hiddenUrl && hiddenUrl.value.trim() !== '') || (lp && lp.value !== '');
+  const msgs = [];
+  if (t.trim() && !hasQuestion) msgs.push('問いかけ（？で終わる行）を1つ入れると伸びやすいです');
+  if (t.trim() && !hasCta) msgs.push('CTA（オファー導線）を付けるのがおすすめ');
+  if (msgs.length) { hint.textContent = '💡 ' + msgs.join(' / '); hint.style.display = ''; }
+  else { hint.style.display = 'none'; }
+}
+
 draftSelect.addEventListener('change', function() {
   const text = drafts[this.value];
   if (text) postText.value = text;
@@ -204,13 +231,22 @@ draftSelect.addEventListener('change', function() {
   const cta = draftCta[this.value];
   const block = document.querySelector('.cta-block');
   if (cta && block && block.applyCta) block.applyCta(cta.lp, cta.url, cta.label);
+  setTimeout(checkFormat, 0);
 });
 
-postText.addEventListener('input', updateCount);
+postText.addEventListener('input', function() { updateCount(); checkFormat(); });
+
+// CTA変更でもヒントを更新（hidden値の同期後に評価）
+const ctaBlockEl = document.querySelector('.cta-block');
+if (ctaBlockEl) {
+  ctaBlockEl.addEventListener('change', function() { setTimeout(checkFormat, 0); });
+  ctaBlockEl.addEventListener('input', function() { setTimeout(checkFormat, 0); });
+}
 
 document.addEventListener('DOMContentLoaded', function() {
   initCtaBlocks();
   updateCount();
+  checkFormat();
 });
 </script>
 {% endblock %}
