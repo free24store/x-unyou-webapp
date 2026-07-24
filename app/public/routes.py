@@ -9,6 +9,7 @@ from flask import render_template, request, redirect, url_for, flash, abort
 
 from . import bp
 from ..extensions import db, csrf
+from ..services import mail_service
 from ..models import (LandingPage, SalesLetter, ContactMessage, Client,
                       Testimonial, StripeProduct, Purchase)
 
@@ -242,7 +243,10 @@ def contact_view(client_id):
         )
         db.session.add(msg_obj)
         db.session.commit()
-        _send_contact_email(client, msg_obj)
+        # 管理者へメール通知（E5-2）。SMTP env 未設定なら送信せず従来どおり成功。
+        # 送信成否でユーザーフローは変えない（失敗しても DB 保存済み）。
+        if mail_service.is_available():
+            mail_service.send_contact_notification(msg_obj)
         flash("お問い合わせを受け付けました。近日中にご連絡いたします。", "success")
         return redirect(url_for("public.contact_view", client_id=client_id,
                                 src=source, src_detail=source_detail))

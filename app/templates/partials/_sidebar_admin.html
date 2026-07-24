@@ -1,5 +1,6 @@
 <nav class="col-md-2 sidebar pt-3 d-none d-md-block">
   <ul class="nav flex-column">
+    <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.ops_dashboard' %}active fw-bold{% endif %}" href="{{ url_for('admin.ops_dashboard') }}">🧭 運用ダッシュボード</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.analytics' %}active fw-bold{% endif %}" href="{{ url_for('admin.analytics') }}">🏠 ホーム</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.profile' %}active fw-bold{% endif %}" href="{{ url_for('admin.profile') }}">✏️ アカウント設定</a></li>
     <li class="nav-item"><a class="nav-link {% if request.endpoint == 'admin.calendar' %}active fw-bold{% endif %}" href="{{ url_for('admin.calendar') }}">📅 投稿カレンダー</a></li>

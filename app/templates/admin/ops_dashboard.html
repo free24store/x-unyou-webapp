@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}運用ダッシュボード — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h4 mb-0">🧭 運用ダッシュボード</h2>
+  <a href="{{ url_for('admin.analytics') }}" class="btn btn-outline-secondary btn-sm">🏠 ホームへ</a>
+</div>
+
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 機能別に散らばった運用状況を<strong>1画面</strong>に集約しました。
+  まず<strong>承認待ち</strong>を片づけ、次に<strong>成果に近いKPI（プロフクリック・DM相談）</strong>を見て、
+  最後に<strong>勝ち型</strong>を次の発信に反映——この順で回すのがおすすめです。
+  数値が無い箇所は<strong>観測待ち</strong>と表示しています（数字は作りません）。
+</div>
+
+{# ── 承認待ちキュー（最優先で目立たせる）────────────────── #}
+<div class="card border-warning mb-4">
+  <div class="card-header bg-warning-subtle fw-bold">⏳ 承認待ちキュー（まず対応）</div>
+  <div class="card-body">
+    <div class="row g-3">
+      {# 予約投稿 pending #}
+      <div class="col-md-6">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <span class="fs-4 fw-bold {{ 'text-danger' if pending_posts_count else 'text-muted' }}">{{ pending_posts_count }}</span>
+            <span class="text-muted">件</span>
+            <span class="ms-1">📤 予約投稿（承認待ち）</span>
+          </div>
+          <a href="{{ url_for('sns.schedule_list') }}" class="btn btn-sm btn-outline-primary">投稿を承認 →</a>
+        </div>
+        {% if pending_posts_recent %}
+        <ul class="list-group list-group-flush small">
+          {% for p in pending_posts_recent %}
+          <li class="list-group-item px-0 py-1">
+            <span class="text-muted">{{ p.scheduled_at.strftime('%m/%d %H:%M') if p.scheduled_at else '—' }}</span>
+            <span class="ms-1">{{ (p.text or '')[:40] }}{% if (p.text or '')|length > 40 %}…{% endif %}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-muted small">承認待ちの予約投稿はありません。</div>
+        {% endif %}
+      </div>
+
+      {# エンゲージ・キュー draft/pending #}
+      <div class="col-md-6">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <span class="fs-4 fw-bold {{ 'text-danger' if engage_pending_count else 'text-muted' }}">{{ engage_pending_count }}</span>
+            <span class="text-muted">件</span>
+            <span class="ms-1">💬 返信下書き（下書き＋承認待ち）</span>
+          </div>
+          <a href="{{ url_for('sns.engage_queue') }}" class="btn btn-sm btn-outline-primary">キューを開く →</a>
+        </div>
+        {% if engage_stale_count %}
+        <div class="alert alert-danger py-2 px-3 small mb-0">
+          ⚠️ うち<strong>{{ engage_stale_count }}件</strong>が<strong>鮮度切れ（24h超）</strong>です。
+          返信は鮮度が命なので、古い下書きは差し替えを検討しましょう。
+        </div>
+        {% else %}
+        <div class="text-muted small">鮮度切れの下書きはありません。鮮度が高いうちに承認・返信を。</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── 主KPI（成果に近い指標を上に）───────────────────────── #}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h3 class="h6 mb-0">🎯 主KPI（成果に近い指標）</h3>
+  <span class="small text-muted">
+    {% if has_metrics %}最新記録日: {{ metric_date }}{% else %}記録なし{% endif %}
+    <a href="{{ url_for('admin.metrics_log') }}" class="ms-2">数値を記録 →</a>
+  </span>
+</div>
+<div class="row g-3 mb-3">
+  {% for k in primary_kpis %}
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="small text-muted">{{ k.emoji }} {{ k.label }}</div>
+        <div class="fs-4 fw-bold">
+          {% if k.value is not none %}{{ "{:,g}".format(k.value) if k.value is number else k.value }}<span class="fs-6 text-muted"> {{ k.unit }}</span>
+          {% else %}<span class="text-muted fs-6">観測待ち</span>{% endif %}
+        </div>
+        <div class="text-muted" style="font-size:0.75rem;">{{ k.hint }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3 mb-4">
+  {% for k in secondary_kpis %}
+  <div class="col-md-4">
+    <div class="card h-100 bg-light">
+      <div class="card-body py-2">
+        <div class="small text-muted">{{ k.emoji }} {{ k.label }} <span class="badge bg-secondary">参考</span></div>
+        <div class="fs-5 fw-bold">
+          {% if k.value is not none %}{{ "{:,g}".format(k.value) if k.value is number else k.value }}<span class="fs-6 text-muted"> {{ k.unit }}</span>
+          {% else %}<span class="text-muted fs-6">観測待ち</span>{% endif %}
+        </div>
+        <div class="text-muted" style="font-size:0.72rem;">{{ k.hint }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3 mb-4">
+  {# ── 相談リード ──────────────────────── #}
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>📬 相談リード（問い合わせ）</span>
+        <a href="{{ url_for('admin.contact_inbox') }}" class="small">受信箱 →</a>
+      </div>
+      <div class="card-body">
+        <div class="mb-2">
+          <span class="fs-4 fw-bold">{{ contact_total }}</span><span class="text-muted"> 件</span>
+          {% if contact_unread %}<span class="badge bg-danger ms-2">未読 {{ contact_unread }}</span>{% endif %}
+        </div>
+        {% if contact_sources %}
+        <div class="small text-muted mb-1">出所別 上位</div>
+        <ul class="list-group list-group-flush small">
+          {% for src, cnt in contact_sources %}
+          <li class="list-group-item px-0 py-1 d-flex justify-content-between">
+            <span>{{ src }}</span><span class="fw-bold">{{ cnt }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-muted small">まだ問い合わせはありません（観測待ち）。</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── 購入 ──────────────────────────── #}
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>🧾 購入</span>
+        <a href="{{ url_for('admin.purchases') }}" class="small">購入履歴 →</a>
+      </div>
+      <div class="card-body">
+        <div class="mb-2">
+          <span class="fs-4 fw-bold">{{ purchase_count }}</span><span class="text-muted"> 件</span>
+        </div>
+        {% if purchase_recent %}
+        <ul class="list-group list-group-flush small">
+          {% for p in purchase_recent %}
+          <li class="list-group-item px-0 py-1 d-flex justify-content-between">
+            <span>{{ (p.product_name or '—')[:18] }}</span>
+            <span class="text-muted">
+              {% if p.amount is not none %}{% if (p.currency or '')|lower == 'jpy' %}¥{{ "{:,}".format(p.amount) }}{% else %}{{ "{:,}".format(p.amount) }}{% endif %}{% else %}—{% endif %}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-muted small">まだ購入記録はありません（観測待ち）。</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── 勝ち型 ─────────────────────────── #}
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>🏆 勝ち型（インサイト要約）</span>
+        <a href="{{ url_for('admin.insights') }}" class="small">詳細 →</a>
+      </div>
+      <div class="card-body">
+        {% if winning.measured %}
+        <div class="small text-muted mb-2">計測済み投稿 {{ winning.measured }}件より</div>
+        <dl class="row mb-0 small">
+          <dt class="col-4 text-muted">hook型</dt>
+          <dd class="col-8">{% if winning.hook %}<span class="fw-bold">{{ winning.hook.label }}</span> <span class="text-muted">（平均 {{ "{:,.0f}".format(winning.hook.avg_imp) }}imp）</span>{% else %}観測待ち{% endif %}</dd>
+          <dt class="col-4 text-muted">フォーマット</dt>
+          <dd class="col-8">{% if winning.format %}<span class="fw-bold">{{ winning.format.label }}</span> <span class="text-muted">（平均 {{ "{:,.0f}".format(winning.format.avg_imp) }}imp）</span>{% else %}観測待ち{% endif %}</dd>
+          <dt class="col-4 text-muted">CTA</dt>
+          <dd class="col-8">{% if winning.cta %}<span class="fw-bold">{{ winning.cta.label }}</span> <span class="text-muted">（平均 {{ "{:,.0f}".format(winning.cta.avg_imp) }}imp）</span>{% else %}観測待ち{% endif %}</dd>
+        </dl>
+        {% else %}
+        <div class="text-muted small">
+          まだ<strong>観測待ち</strong>です。投稿後にインプレッションを記録すると、
+          型ごとの勝ち型がここに要約されます。
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
