@@ -5,7 +5,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-from flask import render_template, request, redirect, url_for, flash, abort
+from flask import (render_template, request, redirect, url_for, flash, abort,
+                   current_app, send_from_directory)
 
 from . import bp
 from ..extensions import db, csrf
@@ -60,6 +61,21 @@ def lp_view(client_id):
                     .order_by(Testimonial.sort_order, Testimonial.id)
                     .all())
     return render_template("public/lp.html", page=page, testimonials=testimonials)
+
+
+@bp.route("/lp-image/<path:filename>")
+def lp_image(filename):
+    """LP見出し用に生成した画像を配信する（instance/images 配下）。
+
+    画像は OPENAI_API_KEY 設定時に LP 作成時のみ生成される。Render の ephemeral
+    ストレージ前提のため、ファイルが存在しなければ 404（LP本体はプレースホルダで
+    描画され続けるので壊れない）。send_from_directory がパストラバーサルを防ぐ。
+    """
+    images_dir = os.path.join(current_app.instance_path, "images")
+    try:
+        return send_from_directory(images_dir, filename)
+    except Exception:
+        abort(404)
 
 
 @bp.route("/sl/<int:client_id>", methods=["GET", "POST"])

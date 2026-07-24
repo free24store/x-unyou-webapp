@@ -39,8 +39,70 @@ def _pain_points_for_genre(genre: str, who: str) -> str:
             "時間をかけているのに全く収益につながらない",
             "怪しいと思われそうで、周りに言えずひとりで悩んでいる",
         ]
-    items = "".join(f"<li>{p}</li>" for p in defaults)
+    # 白いカード枠（list-group）を使わず、セクション背景に馴染むリストにする。
+    # 枠線は下線一本のみ、背景・box-shadow なし。
+    items = "".join(
+        '<li style="padding:.75rem .25rem;border-bottom:1px solid rgba(0,0,0,.08);'
+        'display:flex;align-items:flex-start;gap:.6rem">'
+        '<span style="color:#302b63;font-weight:700;flex:none">✓</span>'
+        f'<span>{p}</span></li>'
+        for p in defaults
+    )
     return items
+
+
+def _section_image_html(heading: str, client_id, idx: int) -> str:
+    """
+    セクション見出し直下に差し込む画像 HTML を返す（テンプレートファースト）。
+
+    - OPENAI_API_KEY がある時だけ DALL-E で横長画像を実生成し、
+      配信URL（/lp-image/<file>）を <img> で埋め込む。
+    - キーが無い / 生成失敗時は「見出しをあしらった軽いグラデーション帯」を返す。
+      いずれの経路でも例外は握り、白枠やエラーは絶対に出さない（LP生成を止めない）。
+
+    画像生成は LP 作成時の1回だけ呼ばれる（Web本体の常時負荷にはしない）。
+    """
+    # 失敗時に使う軽量プレースホルダ（明背景・暗背景どちらにも馴染む自前の帯）
+    placeholder = (
+        '<div style="width:100%;max-width:100%;height:140px;border-radius:12px;'
+        'margin:0 auto 1.75rem;display:flex;align-items:center;justify-content:center;'
+        'background:linear-gradient(135deg,#0f0c29,#302b63,#24243e)">'
+        '<span style="color:rgba(255,255,255,.9);font-weight:700;letter-spacing:.06em;'
+        f'font-size:1.05rem;text-align:center;padding:0 1rem">{heading}</span></div>'
+    )
+
+    try:
+        from . import image_service
+        if not image_service.is_available():
+            return placeholder
+
+        import os
+        import time
+        from flask import current_app
+
+        save_dir = os.path.join(current_app.instance_path, "images")
+        base = f"lp{client_id}_s{idx}_{int(time.time())}"
+        prompt = (
+            "A clean, modern, professional wide banner illustration for a marketing "
+            "landing page section. No text, no words, no letters. "
+            "Soft gradient background in deep indigo and purple tones, elegant, minimal, "
+            "flat vector style, 16:9 wide composition. "
+            f"Theme (Japanese): {heading}."
+        )
+
+        save_path = image_service.generate_image(prompt, save_dir, base, size="1792x1024")
+        if not save_path:
+            return placeholder
+
+        fname = os.path.basename(save_path)
+        return (
+            f'<img src="/lp-image/{fname}" alt="{heading}" loading="lazy" '
+            'style="width:100%;max-width:100%;height:auto;border-radius:12px;'
+            'display:block;margin:0 auto 1.75rem">'
+        )
+    except Exception:
+        # 生成のどこで失敗しても LP 生成は止めず、プレースホルダで続行する。
+        return placeholder
 
 
 def generate_lp_html(profile, line_url: str) -> str:
@@ -82,6 +144,15 @@ def generate_lp_html(profile, line_url: str) -> str:
         fallback="個人差はありますが、3ヶ月を目安に変化を実感される方が多いです。"
     )
 
+    # ── 各セクション見出しから画像（or プレースホルダ）を生成 ──
+    # キーが無い環境ではプレースホルダ帯になる（実生成なし・エラーなし）。
+    cid = getattr(profile, "client_id", None)
+    img_pain     = _section_image_html("こんな悩みはありませんか？", cid, 1)
+    img_solution = _section_image_html("解決策があります", cid, 2)
+    img_proof    = _section_image_html("実績・信頼", cid, 3)
+    img_faq      = _section_image_html("よくある質問", cid, 4)
+    img_cta      = _section_image_html("まずは無料で相談してみてください", cid, 5)
+
     return f"""
 <section class="text-center py-5" style="background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);color:#fff;min-height:60vh;display:flex;align-items:center">
   <div class="container">
@@ -100,7 +171,8 @@ def generate_lp_html(profile, line_url: str) -> str:
 <section class="py-5 bg-light">
   <div class="container" style="max-width:720px">
     <h2 class="h3 text-center mb-4">こんな悩みはありませんか？</h2>
-    <ul class="list-group list-group-flush fs-5 shadow-sm">
+    {img_pain}
+    <ul class="fs-5" style="list-style:none;padding:0;margin:0 auto;max-width:560px">
       {pain_items}
     </ul>
     <p class="text-center mt-4 text-muted">もし1つでも当てはまるなら、続きを読んでください。</p>
@@ -110,6 +182,7 @@ def generate_lp_html(profile, line_url: str) -> str:
 <section class="py-5">
   <div class="container" style="max-width:720px">
     <h2 class="h3 text-center mb-4">解決策があります</h2>
+    {img_solution}
     <p class="fs-5 text-center mb-4">{solution}</p>
     <div class="text-center">
       <a href="{line_url}" target="_blank" class="btn btn-outline-success px-4 py-2">
@@ -122,6 +195,7 @@ def generate_lp_html(profile, line_url: str) -> str:
 <section class="py-5" style="background:#f8f9ff">
   <div class="container" style="max-width:720px">
     <h2 class="h3 text-center mb-4">実績・信頼</h2>
+    {img_proof}
     <p class="fs-5 text-center">{achievement}</p>
   </div>
 </section>
@@ -131,7 +205,8 @@ def generate_lp_html(profile, line_url: str) -> str:
 <section class="py-5 bg-light">
   <div class="container" style="max-width:720px">
     <h2 class="h3 text-center mb-4">よくある質問</h2>
-    <div class="accordion shadow-sm" id="faqAccordion">
+    {img_faq}
+    <div class="accordion" id="faqAccordion" style="--bs-accordion-bg:transparent;--bs-accordion-btn-bg:transparent;--bs-accordion-active-bg:transparent">
       <div class="accordion-item border-0 mb-2">
         <h3 class="accordion-header">
           <button class="accordion-button collapsed rounded" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
@@ -159,6 +234,7 @@ def generate_lp_html(profile, line_url: str) -> str:
 <section class="text-center py-5" style="background:linear-gradient(135deg,#0f0c29,#302b63);color:#fff">
   <div class="container" style="max-width:600px">
     <h2 class="h3 mb-3">まずは無料で相談してみてください</h2>
+    {img_cta}
     <p class="mb-4 opacity-75">登録するだけ。費用は一切かかりません。</p>
     <a href="{line_url}" target="_blank"
        class="btn btn-success btn-lg px-5 py-3 fw-bold shadow"

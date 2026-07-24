@@ -10,7 +10,7 @@ import urllib.error
 from pathlib import Path
 
 
-def generate_image(prompt: str, save_dir: str, filename: str):
+def generate_image(prompt: str, save_dir: str, filename: str, size: str = "1024x1024"):
     """
     DALL-E 3でプロンプトから画像を生成してローカルに保存する。
 
@@ -18,19 +18,24 @@ def generate_image(prompt: str, save_dir: str, filename: str):
         prompt: 英語の画像プロンプト
         save_dir: 保存先ディレクトリ（絶対パス）
         filename: 保存ファイル名（拡張子なし）
+        size: DALL-E 3 対応サイズ（"1024x1024" / "1792x1024"横長 / "1024x1792"縦長）
 
     Returns:
-        保存したファイルの相対パス（instance/images/xxx.png）または None（失敗時）
+        保存したファイルの絶対パス（save_dir/xxx.png）または None（失敗時）
     """
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
         return None
 
+    # DALL-E 3 が受け付けるサイズのみ許可（不正値は正方形にフォールバック）
+    if size not in ("1024x1024", "1792x1024", "1024x1792"):
+        size = "1024x1024"
+
     body = json.dumps({
         "model": "dall-e-3",
         "prompt": prompt,
         "n": 1,
-        "size": "1024x1024",
+        "size": size,
         "response_format": "url",
     }).encode("utf-8")
 
