@@ -6,38 +6,43 @@ LP・セールスレター・LINEステップ生成サービス
   - API キーが設定されている場合は Claude でコピーをさらに磨く（オプション）
 """
 from .claude_client import call_claude
+from .draft_service import TONE_RULES
 
 
 def _ai_enhance(prompt, fallback: str, max_tokens: int = 500) -> str:
-    """Claude が使える場合に強化し、使えなければ fallback をそのまま返す"""
-    result = call_claude(prompt, max_tokens=max_tokens)
+    """Claude が使える場合に強化し、使えなければ fallback をそのまま返す。
+
+    全プロンプトにトーン規律を差し込み、情報商材調の煽りを抑える。
+    """
+    result = call_claude(TONE_RULES + "\n" + prompt, max_tokens=max_tokens)
     return result.strip() if result else fallback
 
 
 def _pain_points_for_genre(genre: str, who: str) -> str:
-    """ジャンルから典型的な悩みリストを返す"""
+    """ジャンル/ターゲットから典型的な悩みリストを返す（テーマ中立・誠実な表現）。
+
+    テーマ駆動：genre と who を反映し、特定ニッチ（副業等）を前提にしない。
+    煽り・射幸的表現は使わず、対象者が実際に抱える課題を落ち着いた言葉で示す。
+    """
+    g = (genre or "このテーマ").strip()
+    aud = (who or "").strip()
+    lead = f"{aud}として、" if aud else ""
     defaults = [
-        f"何を発信すればいいかわからず投稿が止まってしまう",
-        f"フォロワーが全然増えず、努力が報われない気がする",
-        f"継続できず、途中で心が折れてしまう",
+        f"{g}について、何から手をつければよいか整理できていない",
+        f"我流で進めてきたが、この進め方で合っているのか確信が持てない",
+        f"日々の業務に追われ、{g}にまとまった時間を割けていない",
     ]
-    if "X" in genre or "ツイッター" in genre or "Twitter" in genre:
+    if "X" in genre or "ツイッター" in genre or "Twitter" in genre or "SNS" in genre:
         defaults = [
-            "投稿しても全然バズらず、インプレッションが一桁のまま",
-            "何を書けばフォロワーが増えるのか、まったく見当がつかない",
-            "毎日投稿しているのに3ヶ月経ってもフォロワー100人を超えられない",
+            "発信のテーマや軸が定まらず、投稿の方向性に迷っている",
+            "誰に何を届けるべきかが曖昧で、内容が続かない",
+            f"{lead}時間をかけている割に、手応えが感じられない",
         ]
-    elif "コーチング" in genre or "コンサル" in genre:
+    elif "コーチング" in genre or "コンサル" in genre or "士業" in genre:
         defaults = [
-            "SNSで発信しているのに問い合わせが来ない",
-            "自分の強みをどう言語化すればいいかわからない",
-            "競合と差別化できず、値下げ競争に巻き込まれている",
-        ]
-    elif "副業" in genre or "稼ぐ" in genre:
-        defaults = [
-            "何から始めればいいかわからず、情報収集で終わってしまう",
-            "時間をかけているのに全く収益につながらない",
-            "怪しいと思われそうで、周りに言えずひとりで悩んでいる",
+            "発信はしているが、相談や問い合わせにつながらない",
+            "自分の強み・専門性をどう言語化すればよいか分からない",
+            "提供価値が伝わらず、他との違いを説明しづらい",
         ]
     # 白いカード枠（list-group）を使わず、セクション背景に馴染むリストにする。
     # 枠線は下線一本のみ、背景・box-shadow なし。
@@ -107,12 +112,12 @@ def _section_image_html(heading: str, client_id, idx: int) -> str:
 
 def generate_lp_html(profile, line_url: str) -> str:
     """プロフィールデータからLPのHTMLを生成（API不要）"""
-    genre = profile.genre or "X運用"
-    who   = profile.who   or "フォロワーを増やしたい方"
-    what  = profile.what  or "あなたのSNS運用"
-    how   = profile.how   or "独自のメソッド"
+    genre = profile.genre or "発信テーマ"
+    who   = profile.who   or "このテーマに関心のある方"
+    what  = profile.what  or "あなたの課題解決"
+    how   = profile.how   or "実務に基づいた進め方"
     name  = profile.display_name or ""
-    achievement = profile.achievement or f"{genre}で成果を出した実績多数"
+    achievement = profile.achievement or f"{genre}の現場で積み重ねてきた実践知があります"
 
     # ── テンプレートベースのコピー（API不要） ──
     headline_template = f"{who}が{what}を{how}で実現する"
@@ -124,13 +129,14 @@ def generate_lp_html(profile, line_url: str) -> str:
 
     # ── AI がある場合のみコピーを強化 ──
     headline = _ai_enhance(
-        f"X（Twitter）{genre}専門家のランディングページのキャッチコピーを1文（30〜40字）で。"
-        f"ターゲット：{who}。提供価値：{what}。断言口調。出力は1文のみ。",
+        f"「{genre}」の専門家によるランディングページのキャッチコピーを1文（30〜40字）で。"
+        f"ターゲット：{who}。提供価値：{what}。テーマに沿った誠実で落ち着いた表現。"
+        f"煽り・誇大NG。出力は1文のみ。",
         fallback=headline_template
     )
     solution = _ai_enhance(
         f"「{what}があります」という書き出しで始まる解決策の文章を100字以内で。"
-        f"発信テーマ：{genre}、方法：{how}",
+        f"発信テーマ：{genre}、方法：{how}。誠実で具体的に、事実ベースで。",
         fallback=solution_template
     )
     # 「お客様の声」は Testimonial マネージャ（社会的証明）から差し込むため、
@@ -250,35 +256,35 @@ def generate_sales_letter_html(profile, product_name: str, price_jpy: int,
                                 benefits: str, deadline: str, stripe_link: str,
                                 contact_email: str, contact_phone: str) -> str:
     """セールスレターのHTMLを生成（API不要）"""
-    genre = profile.genre or "X運用"
-    who   = profile.who   or "フォロワーを増やしたい方"
+    genre = profile.genre or "発信テーマ"
+    who   = profile.who   or "このテーマに関心のある方"
     name  = profile.display_name or ""
 
-    # テンプレートベースのコピー
-    headline_tmpl = f"今だけ公開：{who}が{genre}で変わる完全ロードマップ「{product_name}」"
+    # テンプレートベースのコピー（テーマ準拠・誠実な表現）
+    headline_tmpl = f"{who}のための{genre}プログラム「{product_name}」"
     problem_tmpl  = (
-        f"Xを頑張っているのに全然伸びない——そんな状況、ずっと続けていませんか？"
-        f"正しい方法を知らないだけで、{who}の努力は今も無駄になっています。"
+        f"{genre}に取り組む中で、進め方に迷いや手応えの薄さを感じていませんか。"
+        f"{who}が本来の力を発揮できるよう、実務に基づいて整理してお伝えします。"
     )
-    offer_tmpl    = f"「{product_name}」は、{genre}で結果を出すための完全ロードマップです。"
-    urgency_tmpl  = f"※ {deadline}で締め切ります。お早めにお申し込みください。"
+    offer_tmpl    = f"「{product_name}」は、{genre}に体系立てて取り組むためのプログラムです。"
+    urgency_tmpl  = f"※ お申し込みの受付は{deadline}までです。ご検討のうえお早めにどうぞ。"
 
     headline = _ai_enhance(
         f"「{product_name}」（{price_jpy:,}円）のセールスレターのヘッドラインを1文で（40〜50字）。"
-        f"ターゲット：{who}。断言型コピー。出力は1文のみ。",
+        f"ターゲット：{who}。テーマ「{genre}」に沿った誠実で落ち着いた表現。煽り・誇大NG。出力は1文のみ。",
         fallback=headline_tmpl
     )
     problem = _ai_enhance(
-        f"X{genre}プログラムのセールスレター用「問題提起」文を100字以内で。"
-        f"ターゲット{who}の悩みに共感するトーン。",
+        f"「{genre}」プログラムのセールスレター用「問題提起」文を100字以内で。"
+        f"ターゲット{who}の課題に共感する、落ち着いた誠実なトーン。",
         fallback=problem_tmpl
     )
     offer = _ai_enhance(
-        f"「{product_name}」の内容・魅力を80字以内で。特典：{benefits[:50]}",
+        f"「{product_name}」の内容・特長を80字以内で、事実ベースで。特典：{benefits[:50]}",
         fallback=offer_tmpl
     )
     urgency = _ai_enhance(
-        f"「{deadline}」を使った申し込みを急かす一文を30字以内で。",
+        f"「{deadline}」までの受付であることを伝える一文を30字以内で。急かさず落ち着いた表現で。",
         fallback=urgency_tmpl
     )
 
@@ -352,9 +358,9 @@ def generate_sales_letter_html(profile, product_name: str, price_jpy: int,
 
 def generate_line_steps(profile, product_name: str = "", sales_letter_url: str = "") -> list:
     """7日間LINEステップ配信メッセージを生成（API不要）"""
-    genre = profile.genre or "X運用"
+    genre = profile.genre or "発信テーマ"
     name  = profile.display_name or "担当者"
-    who   = profile.who or "フォロワーを増やしたい方"
+    who   = profile.who or "このテーマに関心のある方"
     what  = profile.what or "あなたのサービス"
 
     sl_url = sales_letter_url or "（URLは後で設定してください）"
@@ -364,94 +370,89 @@ def generate_line_steps(profile, product_name: str = "", sales_letter_url: str =
         {
             "day": 0, "timing": "登録直後",
             "message": (
-                f"はじめまして、{name}です！\n\n"
-                f"LINE登録ありがとうございます🙏\n\n"
-                f"あなたに今すぐ使える\n"
+                f"はじめまして、{name}です。\n\n"
+                f"LINE登録ありがとうございます。\n\n"
+                f"さっそくお使いいただける\n"
                 f"【{genre}実践チェックリスト】\n"
-                f"をプレゼントします✨\n\n"
-                f"▼ 無料ダウンロードはこちら\n"
+                f"をお送りします。\n\n"
+                f"▼ ダウンロードはこちら\n"
                 f"（ファイルURL or 画像を送付）\n\n"
-                f"これからあなたの{genre}を\n"
-                f"一緒に変えていきましょう！\n\n"
-                f"質問はいつでもどうぞ😊"
+                f"これから{genre}について、\n"
+                f"役立つ内容をお届けしていきます。\n\n"
+                f"ご質問はいつでもどうぞ。"
             )
         },
         {
             "day": 1, "timing": "翌日",
             "message": (
-                f"こんにちは、{name}です！\n\n"
-                f"突然ですが、{who}の方が\n"
-                f"一番多く抱えている悩みって\n"
-                f"何だと思いますか？\n\n"
-                f"…それは\n"
-                f"「何を投稿すればいいかわからない」\n"
-                f"なんです。\n\n"
-                f"実はこれ、ほとんどの方が\n"
-                f"発信の「軸」が決まっていないことが原因です。\n\n"
-                f"軸さえ決まれば、迷いは9割なくなります。\n\n"
-                f"明日はその具体的な決め方をお伝えしますね👍"
+                f"こんにちは、{name}です。\n\n"
+                f"{who}の方とお話ししていると、\n"
+                f"「{genre}に取り組みたいが、\n"
+                f"　何から手をつければいいか分からない」\n"
+                f"という声をよくいただきます。\n\n"
+                f"多くの場合、進め方の全体像が\n"
+                f"整理できていないことが原因です。\n\n"
+                f"全体像が見えると、次の一手が\n"
+                f"ぐっと決めやすくなります。\n\n"
+                f"明日はその整理の仕方をお伝えしますね。"
             )
         },
         {
             "day": 3, "timing": "3日後",
             "message": (
-                f"こんにちは😊\n\n"
-                f"今日は実際の事例をシェアします。\n\n"
-                f"Aさん（フォロワー50人からスタート）\n"
-                f"→ 3ヶ月でフォロワー1,000人達成✨\n"
-                f"→ そこから月3件のDM相談が来るように\n\n"
-                f"Bさん（何を投稿するか全く決まらない状態から）\n"
-                f"→ 発信テーマを1つに絞った翌週から\n"
-                f"　インプレッションが3倍に\n\n"
-                f"お二人の共通点は\n"
-                f"「型を持って動いた」こと。\n\n"
-                f"型さえあれば、{genre}は必ず変わります。\n\n"
-                f"あなたにも同じことができます💪"
+                f"こんにちは。\n\n"
+                f"今日は{genre}に取り組むうえで\n"
+                f"大切にしている考え方をひとつ。\n\n"
+                f"成果を出している方に共通するのは、\n"
+                f"我流で突き進むのではなく、\n"
+                f"「型を持って着実に進める」ことです。\n\n"
+                f"土台となる型があると、\n"
+                f"迷いが減り、改善もしやすくなります。\n\n"
+                f"{genre}も、順を追って取り組めば\n"
+                f"着実に前に進められます。"
             )
         },
         {
             "day": 5, "timing": "5日後",
             "message": (
-                f"こんにちは！\n\n"
-                f"「{genre}をちゃんとやろうと思うけど\n"
-                f"　正直、続けられるか不安…」\n\n"
-                f"そう思っていませんか？\n\n"
-                f"その不安、すごくわかります。\n\n"
-                f"でも実は、続けられない理由の9割は\n"
-                f"「仕組みがないから」なんです。\n\n"
-                f"仕組みを作れば、モチベーションに関係なく\n"
-                f"自然と続けられるようになります。\n\n"
-                f"明日、その仕組みの作り方をお伝えします😊"
+                f"こんにちは。\n\n"
+                f"「{genre}に取り組みたいが、\n"
+                f"　続けられるか不安」\n\n"
+                f"そう感じる方は少なくありません。\n\n"
+                f"続かない原因の多くは、意志の弱さではなく\n"
+                f"「仕組みがないこと」にあります。\n\n"
+                f"無理のない仕組みを整えれば、\n"
+                f"気分に左右されず取り組みを続けられます。\n\n"
+                f"明日は、その仕組みづくりの要点を\n"
+                f"お伝えします。"
             )
         },
         {
             "day": 6, "timing": "6日後",
             "message": (
-                f"こんにちは！\n\n"
-                f"明日で7日間のステップ配信が終わります。\n\n"
-                f"この1週間、あなたの{genre}への向き合い方が\n"
-                f"少し変わっていたら嬉しいです😊\n\n"
-                f"実は明日、とっておきのご案内があります。\n\n"
-                f"「本気で{genre}を変えたい」と思っている方に\n"
-                f"向けた、限定のご案内です。\n\n"
-                f"明日のメッセージを楽しみにしていてください！"
+                f"こんにちは。\n\n"
+                f"明日で7日間の配信が終わります。\n\n"
+                f"この1週間で、{genre}への向き合い方が\n"
+                f"少しでも整理できていれば幸いです。\n\n"
+                f"明日は、より本格的に取り組みたい方へ\n"
+                f"ご案内をお送りします。\n\n"
+                f"必要な方だけ、お目通しいただければと思います。"
             )
         },
         {
             "day": 7, "timing": "7日後",
             "message": (
-                f"こんにちは！\n\n"
+                f"こんにちは。\n\n"
                 f"7日間お付き合いいただき\n"
-                f"ありがとうございました🙏\n\n"
-                f"実は今日、{who}向けの\n"
+                f"ありがとうございました。\n\n"
+                f"本日は、{who}向けの\n"
                 f"「{prod}」をご案内します。\n\n"
-                f"これまでの7日間でお伝えしてきた内容を\n"
-                f"さらに深く、マンツーマンでサポートする\n"
+                f"これまでお伝えしてきた内容を\n"
+                f"より深く、個別にサポートする\n"
                 f"プログラムです。\n\n"
                 f"▼ 詳細はこちら\n"
                 f"{sl_url}\n\n"
-                f"ご質問はこのLINEにどうぞ😊\n"
-                f"一緒に頑張りましょう！"
+                f"ご不明な点はこのLINEからお気軽にどうぞ。"
             )
         },
     ]

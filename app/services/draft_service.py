@@ -4,6 +4,21 @@ from .claude_client import call_claude
 
 
 # ──────────────────────────────────────────────
+# トーン規律（全生成プロンプト共通）
+# ──────────────────────────────────────────────
+# 生成物が「情報商材屋」っぽい煽りトーンにならないよう、全プロンプトへ差し込む。
+# 発信者のジャンル/テーマに厳密に沿い、誠実な専門家の語り口を保つための共通規律。
+TONE_RULES = (
+    "【トーン規律（厳守）】\n"
+    "・発信者のジャンル/テーマに厳密に沿うこと。テーマがビジネス/専門系ならプロフェッショナルな語り口にする。\n"
+    "・情報商材・副業煽り・射幸的表現は禁止：『稼ぐ/不労所得/月◯万/誰でも簡単に/自動で/今だけ/"
+    "バズる/最短で人生変わる/秘密/禁断』的な誇大・煽りは使わない。数字は事実のみ、誠実に。\n"
+    "・絵文字は控えめ（0〜1個）。『フォローして見逃すな』的な定型CTAを毎回は付けない"
+    "（テーマに合う自然な結びにする）。\n"
+)
+
+
+# ──────────────────────────────────────────────
 # E3-4: 自己改善ループ用の分類タグ
 # ──────────────────────────────────────────────
 # 実測ノウハウ: 「問いかけ＋CTA型は伸び、列挙・CTA無しは失速（約9倍差）」。
@@ -83,12 +98,16 @@ def _tag(draft: dict) -> dict:
 
 
 def template_draft(profile, hook, target, reinforcement, edu):
+    genre = profile.get("genre", "").strip()
+    who = profile.get("who", "").strip()
+    head = f"【{genre}】\n" if genre else ""
+    aud = f"{who}にとって、" if who else ""
     return (
-        f"【{profile.get('genre', '')}】\n"
+        f"{head}"
         f"{hook}。\n"
-        f"{target}って、実は{reinforcement}んです。\n"
+        f"{aud}{target}は{reinforcement}テーマです。\n"
         f"{edu['desc']}\n"
-        f"→ 続きが気になる人はフォローして見逃さないでください。"
+        f"参考になれば、同じテーマの投稿も続けていきます。"
     )
 
 
@@ -108,9 +127,10 @@ def generate_drafts(count: int, profile: dict, vocab: dict, education_id: str = 
             edu = rnd.choice(edu_pool)
 
         prompt = (
-            "あなたはX(旧Twitter)の投稿文案を作るコピーライターです。以下の設計図に従って、"
+            "あなたはX(旧Twitter)の投稿文案を作るプロの書き手です。以下の設計図に従って、"
             "日本語で140字程度の投稿文を1つだけ作成してください。誇大な収益保証や捏造実績は書かないこと。"
             "出力は投稿文のみ（説明や前置き不要）。\n\n"
+            + TONE_RULES + "\n"
             f"ジャンル: {profile.get('genre', '')}\n"
             f"ターゲット(Who): {profile.get('who', '')}\n"
             f"ゴール(What): {profile.get('what', '')}\n"
@@ -150,11 +170,12 @@ def generate_guda_drafts(guda_ids: list, profile: dict, vocab: dict) -> list:
             continue
 
         prompt = (
-            "あなたはX(旧Twitter)の投稿文案を作るコピーライターです。\n"
-            "以下の「グダ（買わない理由）」を読者が自発的に解消できるよう、"
+            "あなたはX(旧Twitter)の投稿文案を作るプロの書き手です。\n"
+            "以下の「懸念（一歩を踏み出せない理由）」を読者が自発的に解消できるよう、"
             "自然体で共感できる投稿文（140字程度）を1つだけ作成してください。\n"
             "説教や押し付けにならず、自分の体験談・事実ベースで書くこと。"
             "誇大表現・捏造実績はNG。出力は投稿文のみ。\n\n"
+            + TONE_RULES + "\n"
             f"ジャンル: {profile.get('genre', '')}\n"
             f"ターゲット(Who): {profile.get('who', '')}\n"
             f"立ち位置: {profile.get('position', '')}\n"
@@ -166,11 +187,12 @@ def generate_guda_drafts(guda_ids: list, profile: dict, vocab: dict) -> list:
         text = call_claude(prompt)
         source = "claude"
         if not text:
+            pos = profile.get("position", "").strip() or "私"
             text = (
-                f"「{guda['label']}」と思っていませんか？\n"
+                f"「{guda['label']}」と感じている方は少なくありません。\n"
                 f"{guda['desc']}。\n"
-                f"実際に{profile.get('position', '私')}がゼロから証明しています。\n"
-                f"→ 詳しくはプロフィールを見てください。"
+                f"{pos}として実際に取り組んできた経験から、無理なく始められると考えています。\n"
+                f"気になる点があれば、気軽に質問してください。"
             )
             source = "template"
 
@@ -196,11 +218,12 @@ def generate_story_draft(story: dict, profile: dict) -> dict:
     ketsu = story.get("ketsu", "") # 結：オチ・現在地
 
     prompt = (
-        "あなたはX(旧Twitter)のストーリー型投稿を作るコピーライターです。\n"
-        "以下の起承転結ストーリーを元に、読者が「続きが気になる」「この人をフォローしたい」と思う\n"
+        "あなたはX(旧Twitter)のストーリー型投稿を作るプロの書き手です。\n"
+        "以下の起承転結ストーリーを元に、読者が自然に続きを知りたくなる\n"
         "投稿文（140〜280字程度）を1つだけ作成してください。\n"
-        "結論を先に出さず、感情を揺らし、最後は次回への期待で終わること。\n"
+        "結論を急がず、事実と実感に基づいて描き、最後はテーマに合う自然な結びにすること。\n"
         "誇大表現・捏造NG。出力は投稿文のみ。\n\n"
+        + TONE_RULES + "\n"
         f"ジャンル: {profile.get('genre', '')}\n"
         f"立ち位置: {profile.get('position', '')}\n"
         f"起（出発点・前提）: {ki}\n"
@@ -212,12 +235,14 @@ def generate_story_draft(story: dict, profile: dict) -> dict:
     text = call_claude(prompt)
     source = "claude"
     if not text:
+        genre = profile.get("genre", "").strip()
+        head = f"【{genre}】\n" if genre else ""
         text = (
-            f"【{profile.get('genre', '')}】\n"
+            f"{head}"
             f"{ki}。\n"
-            f"そこから{sho}という状況になったとき、{ten}が起きた。\n"
-            f"結果、{ketsu}。\n"
-            f"→ この続きはまた報告します。フォローしておいてください。"
+            f"そこから{sho}という状況になったとき、{ten}が起きました。\n"
+            f"結果として、{ketsu}。\n"
+            f"経過はまた記録として共有していきます。"
         )
         source = "template"
 
@@ -234,23 +259,24 @@ def generate_story_draft(story: dict, profile: dict) -> dict:
 
 
 def generate_profile_bio(profile: dict) -> str:
-    """Xでインプレッションが取れる"伸びる型"のプロフィール文（140字以内）を生成する。
+    """発信者のジャンル/テーマに沿った、誠実な専門家のプロフィール文（140字以内）を生成する。
 
-    X運用の実測ドクトリン（1行目フックが全て／保持→価値→CTA／口語・言い切り／
-    実績は数字で／堅い説明調は離反）を反映する。堅い自己紹介にしない。
+    テーマ駆動：genre/who/what/position/achievement を反映し、テーマがビジネス/専門系なら
+    プロフェッショナルな語り口にする。情報商材・煽り・定型CTAの多用は排除する。
     """
     genre = profile.get("genre", "")
     prompt = (
-        "あなたはXでインプレッションを稼ぐアカウントのプロフィールを設計する一流コピーライターです。\n"
-        "伸びているアカウントの『型』でプロフィール文を作ってください。堅い・説明的・"
-        "自己紹介的な文章は禁止（『〜しています』の連続や丁寧すぎる敬体は離反を招く）。\n"
-        "口語で、スクロールを止める1行目にすること。\n"
+        "あなたはXのプロフィール文を設計するプロの編集者です。\n"
+        "発信者のジャンル/テーマに厳密に沿った、誠実で信頼できる専門家のプロフィール文を作ってください。\n"
+        "テーマがビジネス/専門系ならプロフェッショナルな語り口にする（過度に砕けさせない）。\n"
         "型（4行・各行1メッセージ）:\n"
-        "① 1行目=強いフック（誰の何をどう解決するかを一言で言い切る／数字や意外性があれば入れる）\n"
-        "② 立ち位置・実績を一言（数字があれば必ず入れる。無ければ具体で。捏造NG）\n"
-        "③ 続きが気になる要素 or 発信スタンス（『きれいごと抜き』『再現できる型だけ』等）\n"
-        "④ CTA（フォロー訴求 or 相談導線。例: → フォローで見逃さないで／DMで『相談』）\n"
-        "体言止め・記号（｜ / → ・）・絵文字1〜2個で締める。140字以内。誇大・捏造NG。出力はプロフィール文のみ。\n\n"
+        "① 1行目=誰の何をどう支えるかを一言で（テーマに沿って端的に。誇張しない）\n"
+        "② 立ち位置・実績を一言（数字は事実のみ。無ければ具体的な取り組みで。捏造NG）\n"
+        "③ 発信の中身・スタンスが伝わる一言（テーマに沿った具体で）\n"
+        "④ 自然な結び（相談・情報の受け取り導線があれば。無理な煽りCTAは付けない）\n"
+        "体言止め・記号（｜ / ・）は可。絵文字は0〜1個まで。140字以内。誇大・煽り・捏造NG。"
+        "出力はプロフィール文のみ。\n\n"
+        + TONE_RULES + "\n"
         f"ジャンル/テーマ: {genre}\n"
         f"ターゲット(Who): {profile.get('who', '')}\n"
         f"ゴール(What): {profile.get('what', '')}\n"
@@ -261,19 +287,30 @@ def generate_profile_bio(profile: dict) -> str:
 
     text = call_claude(prompt)
     if not text:
-        # キー無しでも"堅くない"型で成立させる（テンプレートファースト）
+        # キー無しでもテーマ準拠・落ち着いたプロ調で成立させる（テンプレートファースト）
         who = profile.get("who", "").strip()
         what = profile.get("what", "").strip()
         pos = profile.get("position", "").strip()
         ach = profile.get("achievement", "").strip()
-        line1 = f"{who}の「{what}」、最短ルートだけ発信。" if (who or what) else f"{genre}の本音、ずばずば発信。"
-        line2 = f"{pos}／{ach}".strip("／") or "現場でやってきた再現できる型だけ。"
-        text = (
-            f"{line1}\n"
-            f"{line2}\n"
-            f"きれいごと抜き・再現できる型だけ 🔥\n"
-            f"→ フォローで見逃さないで"
+        g = genre.strip()
+
+        if who and what:
+            line1 = f"{who}の「{what}」を支える発信。"
+        elif what:
+            line1 = f"「{what}」に取り組む人へ向けた発信。"
+        elif g:
+            line1 = f"{g}について、実務に根ざした発信をしています。"
+        else:
+            line1 = "実務に根ざした発信をしています。"
+
+        line2 = "／".join([p for p in (pos, ach) if p]) or (
+            f"{g}の現場で積み重ねてきた実践知を共有します。" if g else "現場で積み重ねてきた実践知を共有します。"
         )
+
+        line3 = f"{g}のテーマに沿って、具体と事実ベースで発信します。" if g else "具体と事実ベースで発信します。"
+        line4 = "気になる点は気軽にご相談ください。"
+
+        text = f"{line1}\n{line2}\n{line3}\n{line4}"
     return text.strip()
 
 
@@ -295,10 +332,11 @@ def generate_display_name(profile: dict, base_name: str = "") -> list:
     name = name or "なまえ"
 
     prompt = (
-        "Xで伸びているアカウントの『名前＠テーマ（肩書/売り）』形式で、"
-        "アカウント表示名の候補を3つ、改行区切りで出してください。\n"
-        "各25文字以内・具体的で刺さるタグライン・誇大NG。名前部分は『" + name + "』を使う。\n"
+        "『名前＠テーマ（肩書/専門）』形式で、アカウント表示名の候補を3つ、改行区切りで出してください。\n"
+        "各25文字以内。テーマ語をそのまま活かし、発信ジャンルが一目で伝わるタグラインにする。\n"
+        "煽り語・誇大表現（稼ぐ/最短/誰でも 等）は足さない。名前部分は『" + name + "』を使う。\n"
         "区切りは全角＠か｜。出力は候補3行のみ。\n\n"
+        + TONE_RULES + "\n"
         f"ジャンル/テーマ: {genre}\n立ち位置: {pos}\nゴール: {what}\nターゲット: {who}\n"
     )
     text = call_claude(prompt)
@@ -307,11 +345,11 @@ def generate_display_name(profile: dict, base_name: str = "") -> list:
         cands = [c for c in cands if c][:3]
         if cands:
             return cands
-    # フォールバック（キー無し）: テーマの言葉で組む
+    # フォールバック（キー無し）: テーマ語をそのまま使い、煽り語は足さない
     theme = (pos or genre or what or "発信中").strip()
     cands = [f"{name}＠{theme}"]
     if what and what != theme:
-        cands.append(f"{name}＠{what}を最短で")
+        cands.append(f"{name}＠{what}")
     if genre and genre not in (theme, what):
-        cands.append(f"【{genre}】{name}｜{pos or what}".rstrip("｜"))
+        cands.append(f"{name}｜{genre}{('・' + pos) if pos else ''}")
     return cands[:3]
