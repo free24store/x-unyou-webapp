@@ -204,9 +204,14 @@ def schedule_new():
                         "position": profile.position if profile else "",
                     }
                     video_dir = os.path.join(current_app.instance_path, VIDEO_DIR_NAME)
-                    media_path = generate_draft_video(draft.text, profile_dict, video_dir)
-                    draft.video_path = media_path
-                    db.session.commit()
+                    try:
+                        media_path = generate_draft_video(draft.text, profile_dict, video_dir)
+                        draft.video_path = media_path
+                        db.session.commit()
+                    except Exception:
+                        # サーバー側動画ライブラリ未導入（Render軽量化）でも投稿作成は止めない
+                        flash("サーバー側の動画生成は無効のため、動画なしで投稿を作成しました。"
+                              "動画は「🎬 動画スタジオ」（ブラウザ生成）をご利用ください。", "warning")
 
         # E6-1: CTAリンク先を解決し、本文末尾にオファー導線を織り込む
         resolved_cta_url = resolve_offer_url(client_id, offer_lp_id, cta_raw_url)
@@ -377,7 +382,12 @@ def generate_video(draft_id):
         db.session.commit()
         flash(f"動画を生成しました: {os.path.basename(video_path)}", "success")
     except Exception as e:
-        flash(f"動画生成に失敗しました: {e}", "danger")
+        _m = str(e)
+        if any(k in _m for k in ("動画生成ライブラリ", "numpy", "Pillow", "imageio")):
+            flash("サーバー側の動画生成は無効です（Render軽量化のため）。"
+                  "サイドバーの「🎬 動画スタジオ」でブラウザ内生成をご利用ください（インストール不要）。", "warning")
+        else:
+            flash(f"動画生成に失敗しました: {e}", "danger")
 
     return redirect(url_for("admin.drafts"))
 

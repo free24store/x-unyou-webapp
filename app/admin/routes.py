@@ -36,6 +36,154 @@ def dashboard():
     return redirect(url_for("admin.analytics"))
 
 
+# ──────────────────────────────────────────────
+# E3-5: 運用ダッシュボード統合（1画面集約・読み取りのみ）
+# ──────────────────────────────────────────────
+# 機能別に散らばった運用状況（承認待ち・KPI・相談リード・購入・勝ち型）を
+# 当該clientについて1画面に集約する。schema変更なし・書き込みなし・捏造なし。
+# 各セクションから該当画面（schedule/engage/contact-inbox/purchases/insights）へ遷移。
+# 未計測・データ無しは「観測待ち」と明示する（数値を作らない）。
+
+@bp.route("/ops-dashboard")
+def ops_dashboard():
+    import os
+    from datetime import timedelta
+    from ..models import (EngagementItem, ENGAGE_STATUS_DRAFT,
+                          ENGAGE_STATUS_PENDING)
+    from ..services.draft_service import (HOOK_TYPE_LABELS, FORMAT_TYPE_LABELS,
+                                          CTA_TYPE_LABELS)
+    client_id = _client_id()
+    now = datetime.utcnow()
+
+    # ── 承認待ちキュー ──────────────────────────────
+    # 予約投稿（pending）: 承認ゲートの手前。件数＋直近数件（近い予約時刻順）。
+    pending_q = ScheduledPost.query.filter_by(
+        client_id=client_id, status=POST_STATUS_PENDING)
+    pending_posts_count = pending_q.count()
+    pending_posts_recent = (pending_q.order_by(ScheduledPost.scheduled_at.asc())
+                            .limit(5).all())
+
+    # エンゲージ・キュー（draft / pending）: 返信下書きは鮮度商品。
+    engage_items = (EngagementItem.query
+                    .filter_by(client_id=client_id)
+                    .filter(EngagementItem.status.in_(
+                        [ENGAGE_STATUS_DRAFT, ENGAGE_STATUS_PENDING]))
+                    .all())
+    engage_pending_count = len(engage_items)
+    # 鮮度切れ（既定24h超）: sns 側と同じ既定値。読み取りのみで判定（失効はしない）。
+    try:
+        fresh_hours = int(os.environ.get("ENGAGE_FRESH_HOURS", "") or 24)
+        if fresh_hours <= 0:
+            fresh_hours = 24
+    except (TypeError, ValueError):
+        fresh_hours = 24
+    engage_stale_count = sum(
+        1 for i in engage_items
+        if ((now - (i.created_at or now)) > timedelta(hours=fresh_hours)))
+
+    # ── KPI（最新の MetricEntry）─────────────────────
+    # E3-8: 主KPIは「成果に近い指標」= プロフクリック / DM相談 / エンゲージ率 を上に。
+    # プロフクリックは計測列が無い → 捏造せず「観測待ち」（None）で提示する。
+    latest = (MetricEntry.query.filter_by(client_id=client_id)
+              .order_by(MetricEntry.date.desc()).first())
+
+    def _latest(attr):
+        return getattr(latest, attr, None) if latest is not None else None
+
+    contact_total = ContactMessage.query.filter_by(client_id=client_id).count()
+    contact_unread = ContactMessage.query.filter_by(
+        client_id=client_id, is_read=False).count()
+
+    primary_kpis = [
+        {"label": "プロフクリック", "emoji": "🔎",
+         "value": None, "unit": "回",
+         "hint": "プロフィールを見に来た人＝濃い関心。数値連携は観測待ち"},
+        {"label": "DM相談（問い合わせ）", "emoji": "📨",
+         "value": contact_total, "unit": "件",
+         "hint": "実際に相談が来た数＝成果に最も近い指標"},
+        {"label": "エンゲージメント率", "emoji": "❤️",
+         "value": _latest("engagement_rate_pct"), "unit": "%",
+         "hint": "届いた人が反応したか＝到達の濃さ"},
+    ]
+    secondary_kpis = [
+        {"label": "フォロワー増加", "emoji": "👥",
+         "value": _latest("followers_delta_per_day"), "unit": "人/日",
+         "hint": "増えても到達・相談に繋がらなければ参考値（vanity指標）"},
+        {"label": "平均インプレッション", "emoji": "👁",
+         "value": _latest("avg_impressions"), "unit": "回",
+         "hint": "投稿がどれだけ見られたか＝認知の広さ"},
+        {"label": "リスト/LINE登録", "emoji": "📩",
+         "value": _latest("list_signups_per_day"), "unit": "件/日",
+         "hint": "見込み客リストの獲得ペース"},
+    ]
+    metric_date = latest.date.isoformat() if latest else None
+
+    # ── 相談リード（ContactMessage）出所別 上位 ──────────
+    all_contacts = ContactMessage.query.filter_by(client_id=client_id).all()
+    source_counts = {}
+    for m in all_contacts:
+        key = (m.source or "direct").strip() or "direct"
+        source_counts[key] = source_counts.get(key, 0) + 1
+    contact_sources = sorted(source_counts.items(),
+                             key=lambda kv: kv[1], reverse=True)[:5]
+
+    # ── 購入（Purchase）─────────────────────────────
+    purchase_q = Purchase.query.filter_by(client_id=client_id)
+    purchase_count = purchase_q.count()
+    purchase_recent = (purchase_q.order_by(Purchase.created_at.desc())
+                       .limit(5).all())
+
+    # ── 勝ち型（E3-4のインサイト要約）───────────────────
+    # 投稿済み（posted）かつインプ計測済みの投稿を、紐づくドラフトのタグと突き合わせ、
+    # 型別の平均インプで最上位を提示。実データが無い軸は「観測待ち」（捏造しない）。
+    rows = (db.session.query(ScheduledPost, Draft)
+            .join(Draft, ScheduledPost.draft_id == Draft.id)
+            .filter(ScheduledPost.client_id == client_id,
+                    ScheduledPost.status == "posted",
+                    ScheduledPost.impressions.isnot(None))
+            .all())
+
+    def _best(attr, labels):
+        buckets = {}
+        for sp, dr in rows:
+            key = getattr(dr, attr) or "unclassified"
+            b = buckets.setdefault(key, {"count": 0, "total_imp": 0})
+            b["count"] += 1
+            b["total_imp"] += sp.impressions or 0
+        if not buckets:
+            return None
+        ranking = []
+        for key, b in buckets.items():
+            label = labels.get(key, "未分類" if key == "unclassified" else key)
+            ranking.append({
+                "label": label, "count": b["count"],
+                "avg_imp": round(b["total_imp"] / b["count"], 1) if b["count"] else 0,
+            })
+        ranking.sort(key=lambda r: r["avg_imp"], reverse=True)
+        return ranking[0]
+
+    winning = {
+        "measured": len(rows),
+        "hook": _best("hook_type", HOOK_TYPE_LABELS),
+        "format": _best("format_type", FORMAT_TYPE_LABELS),
+        "cta": _best("cta_type", CTA_TYPE_LABELS),
+    }
+
+    return render_template(
+        "admin/ops_dashboard.html",
+        pending_posts_count=pending_posts_count,
+        pending_posts_recent=pending_posts_recent,
+        engage_pending_count=engage_pending_count,
+        engage_stale_count=engage_stale_count,
+        primary_kpis=primary_kpis, secondary_kpis=secondary_kpis,
+        metric_date=metric_date, has_metrics=bool(latest),
+        contact_total=contact_total, contact_unread=contact_unread,
+        contact_sources=contact_sources,
+        purchase_count=purchase_count, purchase_recent=purchase_recent,
+        winning=winning,
+    )
+
+
 @bp.route("/profile", methods=["GET", "POST"])
 def profile():
     client_id = _client_id()
@@ -374,7 +522,9 @@ def analytics():
         "scheduled": ScheduledPost.query.filter_by(client_id=client_id).filter(
             ScheduledPost.status.in_(["pending", "approved"])).count() > 0,
     }
-    setup_done = all(setup_steps.values())
+    # SNS API連携・予約投稿は「任意」。プロフィール＋ドラフトが揃えば手動運用（コピー投稿）で
+    # 使えるので、これらを満たせばセットアップ完了扱いにする（API連携を強制しない）。
+    setup_done = setup_steps["profile"] and setup_steps["drafts"]
 
     # 今日投稿すべき予定を取得（承認待ち＋承認済みの両方）
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0)
