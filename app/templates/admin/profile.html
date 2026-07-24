@@ -74,6 +74,13 @@
               <button class="btn btn-sm btn-outline-dark" onclick="copyBio()">📋 コピーする</button>
             </div>
           </div>
+          <div id="nameResult" class="card border-info mt-2" style="display:none">
+            <div class="card-header small fw-bold">アカウント名の候補（テーマ入り「〇〇＠テーマ」）</div>
+            <div class="card-body">
+              <div id="nameChips" class="d-flex flex-wrap gap-2"></div>
+              <div class="form-text mt-1">クリックすると上の「表示名」に入ります（保存で反映）</div>
+            </div>
+          </div>
           <div class="alert alert-warning small mt-2 mb-0">
             💡 Point: そのままコピーせず、自分の言葉に少し直すと「あなたらしさ」が伝わります
           </div>
@@ -149,6 +156,22 @@ document.getElementById('genBioBtn').addEventListener('click', function() {
   .then(data => {
     document.getElementById('bioText').textContent = data.bio || '生成に失敗しました（設定を保存してから再度お試しください）';
     document.getElementById('bioResult').style.display = 'block';
+    // アカウント名の候補（〇〇＠テーマ）をチップ表示。クリックで表示名欄へ反映。
+    var chips = document.getElementById('nameChips');
+    chips.innerHTML = '';
+    (data.names || []).forEach(function(n) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-sm btn-outline-info';
+      b.textContent = n;
+      b.addEventListener('click', function() {
+        var inp = document.querySelector('input[name="display_name"]');
+        if (inp) { inp.value = n; inp.focus(); }
+      });
+      chips.appendChild(b);
+    });
+    document.getElementById('nameResult').style.display =
+      (data.names && data.names.length) ? 'block' : 'none';
     this.disabled = false;
     this.textContent = '自己紹介文を再生成';
   })

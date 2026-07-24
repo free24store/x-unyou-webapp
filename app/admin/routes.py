@@ -16,7 +16,8 @@ from ..services.vocab import load_vocab
 from ..services.diagnostics_service import infer_phase, funnel_diagnostics, PHASE_LABELS
 from ..services.calendar_service import generate_calendar
 from ..services.draft_service import (generate_drafts, generate_guda_drafts,
-                                      generate_story_draft, generate_profile_bio)
+                                      generate_story_draft, generate_profile_bio,
+                                      generate_display_name)
 from ..services import batch_service
 
 
@@ -655,8 +656,9 @@ def generate_bio():
         "how": profile.how, "position": profile.position, "achievement": profile.achievement,
     }
     bio = generate_profile_bio(profile_dict)
+    names = generate_display_name(profile_dict, base_name=(profile.display_name or ""))
     from flask import jsonify
-    return jsonify({"bio": bio})
+    return jsonify({"bio": bio, "names": names})
 
 
 @bp.route("/users")

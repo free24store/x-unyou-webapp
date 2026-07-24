@@ -234,13 +234,24 @@ def generate_story_draft(story: dict, profile: dict) -> dict:
 
 
 def generate_profile_bio(profile: dict) -> str:
-    """プロフィール文（140字以内）をWho-What-Howから生成する。"""
+    """Xでインプレッションが取れる"伸びる型"のプロフィール文（140字以内）を生成する。
+
+    X運用の実測ドクトリン（1行目フックが全て／保持→価値→CTA／口語・言い切り／
+    実績は数字で／堅い説明調は離反）を反映する。堅い自己紹介にしない。
+    """
+    genre = profile.get("genre", "")
     prompt = (
-        "あなたはX(旧Twitter)のプロフィール文を作るコピーライターです。\n"
-        "以下の情報を元に、フォローしたくなる魅力的なプロフィール文（4行・140字以内）を作成してください。\n"
-        "4要素を必ず含めること: ①今やっていること ②実績（数字） ③自分の立ち位置 ④興味付け要素（不完全情報）\n"
-        "誇大表現・捏造NG。出力はプロフィール文のみ。\n\n"
-        f"ジャンル: {profile.get('genre', '')}\n"
+        "あなたはXでインプレッションを稼ぐアカウントのプロフィールを設計する一流コピーライターです。\n"
+        "伸びているアカウントの『型』でプロフィール文を作ってください。堅い・説明的・"
+        "自己紹介的な文章は禁止（『〜しています』の連続や丁寧すぎる敬体は離反を招く）。\n"
+        "口語で、スクロールを止める1行目にすること。\n"
+        "型（4行・各行1メッセージ）:\n"
+        "① 1行目=強いフック（誰の何をどう解決するかを一言で言い切る／数字や意外性があれば入れる）\n"
+        "② 立ち位置・実績を一言（数字があれば必ず入れる。無ければ具体で。捏造NG）\n"
+        "③ 続きが気になる要素 or 発信スタンス（『きれいごと抜き』『再現できる型だけ』等）\n"
+        "④ CTA（フォロー訴求 or 相談導線。例: → フォローで見逃さないで／DMで『相談』）\n"
+        "体言止め・記号（｜ / → ・）・絵文字1〜2個で締める。140字以内。誇大・捏造NG。出力はプロフィール文のみ。\n\n"
+        f"ジャンル/テーマ: {genre}\n"
         f"ターゲット(Who): {profile.get('who', '')}\n"
         f"ゴール(What): {profile.get('what', '')}\n"
         f"ロードマップ(How): {profile.get('how', '')}\n"
@@ -250,10 +261,57 @@ def generate_profile_bio(profile: dict) -> str:
 
     text = call_claude(prompt)
     if not text:
+        # キー無しでも"堅くない"型で成立させる（テンプレートファースト）
+        who = profile.get("who", "").strip()
+        what = profile.get("what", "").strip()
+        pos = profile.get("position", "").strip()
+        ach = profile.get("achievement", "").strip()
+        line1 = f"{who}の「{what}」、最短ルートだけ発信。" if (who or what) else f"{genre}の本音、ずばずば発信。"
+        line2 = f"{pos}／{ach}".strip("／") or "現場でやってきた再現できる型だけ。"
         text = (
-            f"{profile.get('what', '')}を目指す{profile.get('who', '')}向け発信。\n"
-            f"{profile.get('position', '')}が{profile.get('achievement', '')}を達成した方法を発信中。\n"
-            f"フル自動ではなく、再現性重視でロードマップを公開。\n"
-            f"→ フォローして見逃さないでください。"
+            f"{line1}\n"
+            f"{line2}\n"
+            f"きれいごと抜き・再現できる型だけ 🔥\n"
+            f"→ フォローで見逃さないで"
         )
     return text.strip()
+
+
+def generate_display_name(profile: dict, base_name: str = "") -> list:
+    """「〇〇＠テーマ」形式のアカウント名候補を2〜3個返す。
+
+    伸びているアカウントの命名（名前＋肩書/テーマのタグライン）を踏襲。
+    base_name（既存の表示名の"名前"部分）があれば活かす。
+    """
+    genre = (profile.get("genre") or "").strip()
+    what = (profile.get("what") or "").strip()
+    pos = (profile.get("position") or "").strip()
+    who = (profile.get("who") or "").strip()
+    # 既存表示名から"名前"部分だけ取り出す（＠/｜/【】より前）
+    import re as _re
+    name = base_name.strip()
+    if name:
+        name = _re.split(r"[＠@｜|【】]", name)[0].strip()
+    name = name or "なまえ"
+
+    prompt = (
+        "Xで伸びているアカウントの『名前＠テーマ（肩書/売り）』形式で、"
+        "アカウント表示名の候補を3つ、改行区切りで出してください。\n"
+        "各25文字以内・具体的で刺さるタグライン・誇大NG。名前部分は『" + name + "』を使う。\n"
+        "区切りは全角＠か｜。出力は候補3行のみ。\n\n"
+        f"ジャンル/テーマ: {genre}\n立ち位置: {pos}\nゴール: {what}\nターゲット: {who}\n"
+    )
+    text = call_claude(prompt)
+    if text:
+        cands = [l.strip("・-　 ") for l in text.strip().splitlines() if l.strip()]
+        cands = [c for c in cands if c][:3]
+        if cands:
+            return cands
+    # フォールバック（キー無し）: テーマの言葉で組む
+    theme = (pos or genre or what or "発信中").strip()
+    cands = [f"{name}＠{theme}"]
+    if what and what != theme:
+        cands.append(f"{name}＠{what}を最短で")
+    if genre and genre not in (theme, what):
+        cands.append(f"【{genre}】{name}｜{pos or what}".rstrip("｜"))
+    return cands[:3]
