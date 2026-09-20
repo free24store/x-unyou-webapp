@@ -38,6 +38,9 @@ def create_app():
     from .public import bp as public_bp
     app.register_blueprint(public_bp)
 
+    from .line import bp as line_bp
+    app.register_blueprint(line_bp)
+
     # E1-2: ヘルスチェック（Render監視用）。認証不要・依存最小。
     # DB疎通が落ちていても 200 + db:"ng" で返し、Renderのヘルスチェック自体は
     # 落とさない（無料プランでDB一時不調→再起動ループになるのを防ぐ）。
@@ -47,8 +50,12 @@ def create_app():
         from sqlalchemy import text as _sql_text
 
         db_status = "ok"
+        # どのDBに繋がっているかの種別だけ返す（接続先・認証情報は出さない）。
+        # SQLite は Render のスリープごとに消えるため、本番が Postgres かを外から確認できるようにする。
+        engine = "unknown"
         try:
             db.session.execute(_sql_text("SELECT 1"))
+            engine = db.engine.dialect.name
         except Exception:
             db_status = "ng"
         finally:
@@ -57,6 +64,7 @@ def create_app():
         return jsonify({
             "status": "ok",
             "db": db_status,
+            "engine": engine,
             "version": os.environ.get("RENDER_GIT_COMMIT", os.environ.get("APP_VERSION", "dev"))[:12],
         }), 200
 
@@ -92,6 +100,20 @@ def create_app():
                 logging.getLogger(__name__).exception("予約投稿ジョブの実行に失敗しました")
 
         scheduler.add_job(_run_scheduled_posts, "interval", minutes=1, id="scheduled_posts")
+
+        # E5-3: LINEステップの定時配信。起きている間の補助経路（主経路は外部cron →
+        # /line/cron/dispatch。無料プランはスリープ中この処理が動かないため）。
+        # dispatch_due は冪等なので cron と重なっても同じ通は二度送らない。
+        def _run_line_dispatch():
+            try:
+                with app.app_context():
+                    from .services.line_service import dispatch_due
+                    dispatch_due()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("LINEステップ配信ジョブの実行に失敗しました")
+
+        scheduler.add_job(_run_line_dispatch, "interval", minutes=5, id="line_dispatch")
         scheduler.start()
         app.scheduler = scheduler
     except Exception:
@@ -150,6 +172,10 @@ def create_app():
             # E3-6: 低インプ投稿クリーンアップ。既存行は NULL（未計測）のままでよい。
             ("scheduled_post", "impressions", "INTEGER"),
             ("scheduled_post", "imp_checked_at", "TIMESTAMP"),
+            # E5-3: LINE実配信の承認ゲート。既存セットは未承認・停止のまま（安全側の既定）。
+            ("line_step_set", "is_active", "BOOLEAN DEFAULT FALSE"),
+            ("line_step_set", "approved_at", "TIMESTAMP"),
+            ("line_step_set", "approved_by_user_id", "INTEGER"),
         ]
 
         dialect = db.engine.dialect.name
