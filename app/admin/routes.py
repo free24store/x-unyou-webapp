@@ -10,6 +10,8 @@ from ..models import (Client, User, ProfileConcept, MetricEntry,
                       LandingPage, SalesLetter, LineStepSet,
                       ContactMessage, StripeProduct, StoryCampaign,
                       ScheduledPost, Testimonial, Purchase,
+                      LineFriend, LINE_FRIEND_ACTIVE, LINE_FRIEND_DONE,
+                      LINE_FRIEND_BLOCKED, LINE_FRIEND_CONVERTED,
                       POST_STATUS_PENDING, POST_STATUS_APPROVED,
                       POST_STATUS_LABELS, can_transition)
 from ..services.vocab import load_vocab
@@ -942,7 +944,16 @@ def sl_delete(letter_id):
 def line_steps_list():
     client_id = _client_id()
     step_sets = LineStepSet.query.filter_by(client_id=client_id).order_by(LineStepSet.created_at.desc()).all()
-    return render_template("admin/line_steps_list.html", step_sets=step_sets)
+    from ..services import line_service
+    creds = line_service.get_credentials(client_id) or {}
+    return render_template(
+        "admin/line_steps_list.html",
+        step_sets=step_sets,
+        steps_of=line_service.normalized_steps,
+        stats={ss.id: line_service.step_stats(client_id, ss) for ss in step_sets},
+        connected=bool(creds),
+        has_test_user=bool(creds.get("test_user_id")),
+    )
 
 
 @bp.route("/line-steps/new", methods=["GET", "POST"])
@@ -977,10 +988,222 @@ def line_steps_delete(set_id):
     step_set = LineStepSet.query.get_or_404(set_id)
     if step_set.client_id != _client_id():
         abort(403)
+    if LineFriend.query.filter_by(step_set_id=step_set.id).first():
+        # 配信中の友だちの進捗が宙に浮くため、使用中のセットは削除させない（停止で止める）。
+        flash("このステップセットは友だちに割り当て済みのため削除できません。停止してください。", "warning")
+        return redirect(url_for("admin.line_steps_list"))
     db.session.delete(step_set)
     db.session.commit()
     flash("LINEステップを削除しました。", "success")
     return redirect(url_for("admin.line_steps_list"))
+
+
+# ── E5-3: Messaging API 実配信 ─────────────────────
+
+def _own_step_set(set_id):
+    step_set = LineStepSet.query.get_or_404(set_id)
+    if step_set.client_id != _client_id():
+        abort(403)
+    return step_set
+
+
+@bp.route("/line-steps/settings", methods=["GET", "POST"])
+def line_settings():
+    from ..models import SnsConnection
+    from ..services import line_service
+    import os
+
+    client_id = _client_id()
+    conn = line_service.get_connection(client_id)
+    creds = dict(conn.credentials_json or {}) if conn else {}
+
+    if request.method == "POST":
+        # 伏せ字のまま送られてきた欄（＝未変更）は上書きしない。
+        for key in ("channel_secret", "access_token"):
+            value = request.form.get(key, "").strip()
+            if value and not value.startswith("●"):
+                creds[key] = value
+        for key in ("account_name", "consult_keyword", "consult_reply", "test_user_id"):
+            creds[key] = request.form.get(key, "").strip()
+        if conn is None:
+            conn = SnsConnection(client_id=client_id, platform="line", credentials_json=creds, is_active=True)
+            db.session.add(conn)
+        else:
+            conn.credentials_json = creds
+        db.session.commit()
+        flash("LINE接続設定を保存しました。", "success")
+        return redirect(url_for("admin.line_settings"))
+
+    live_sets = LineStepSet.query.filter_by(client_id=client_id, is_active=True).all()
+    return render_template(
+        "admin/line_settings.html",
+        creds=creds,
+        masked_secret=line_service.mask(creds.get("channel_secret", "")),
+        masked_token=line_service.mask(creds.get("access_token", "")),
+        webhook_url=f"{current_app_base_url()}/line/webhook/{client_id}",
+        cron_url=f"{current_app_base_url()}/line/cron/dispatch",
+        cron_secret_set=bool(os.environ.get("LINE_CRON_SECRET")),
+        cron_times=line_service.cron_times(live_sets),
+        default_keyword=line_service.DEFAULT_CONSULT_KEYWORD,
+    )
+
+
+def current_app_base_url():
+    from flask import current_app
+    return current_app.config.get("BASE_URL", "").rstrip("/")
+
+
+@bp.route("/line-steps/<int:set_id>/edit", methods=["GET", "POST"])
+def line_steps_edit(set_id):
+    from ..services import line_service
+
+    step_set = _own_step_set(set_id)
+    steps = line_service.normalized_steps(step_set)
+
+    if request.method == "POST":
+        count = int(request.form.get("count", len(steps)) or 0)
+        new_steps, errors = [], []
+        for i in range(count):
+            if request.form.get(f"delete_{i}"):
+                continue
+            step = line_service.normalize_step({
+                "day": request.form.get(f"day_{i}", "0"),
+                "send_at": request.form.get(f"send_at_{i}", ""),
+                "timing": request.form.get(f"timing_{i}", ""),
+                "message": request.form.get(f"message_{i}", "").replace("\r\n", "\n"),
+                "video_url": request.form.get(f"video_url_{i}", ""),
+                "preview_url": request.form.get(f"preview_url_{i}", ""),
+                "quick_replies": line_service.parse_quick_replies(request.form.get(f"quick_replies_{i}", "")),
+            })
+            errors += [f"STEP{len(new_steps) + 1}: {e}" for e in line_service.validate_step(step)]
+            new_steps.append(step)
+        if request.form.get("add_step"):
+            last_day = new_steps[-1]["day"] if new_steps else 0
+            new_steps.append(line_service.normalize_step({"day": last_day + 1, "send_at": "20:30", "message": ""}))
+            return render_template("admin/line_steps_edit.html", step_set=step_set, steps=new_steps,
+                                   fmt_qr=line_service.format_quick_replies)
+        if errors:
+            for e in errors:
+                flash(e, "danger")
+            return render_template("admin/line_steps_edit.html", step_set=step_set, steps=new_steps,
+                                   fmt_qr=line_service.format_quick_replies)
+        # 並びは (day, 送信時刻) 順に揃える（配信は並び順に1通ずつ進むため）。
+        new_steps.sort(key=lambda s: (s["day"], line_service.parse_send_at(s["send_at"]) or time(0, 0)))
+        step_set.title = request.form.get("title", step_set.title).strip() or step_set.title
+        step_set.steps_json = new_steps
+        # 文面が変わったら承認を取り消す（未承認の文面は送らない）。
+        step_set.approved_at = None
+        step_set.approved_by_user_id = None
+        step_set.is_active = False
+        db.session.commit()
+        flash("保存しました。配信を再開するには、内容を確認して「承認して稼働」を押してください。", "success")
+        return redirect(url_for("admin.line_steps_list"))
+
+    return render_template("admin/line_steps_edit.html", step_set=step_set, steps=steps,
+                           fmt_qr=line_service.format_quick_replies)
+
+
+@bp.route("/line-steps/<int:set_id>/approve", methods=["POST"])
+def line_steps_approve(set_id):
+    from ..services import line_service
+
+    step_set = _own_step_set(set_id)
+    problems = []
+    for i, st in enumerate(line_service.normalized_steps(step_set), start=1):
+        problems += [f"STEP{i}: {e}" for e in line_service.validate_step(st)]
+    if not step_set.steps_json:
+        problems.append("ステップが1通もありません")
+    if problems:
+        for p in problems:
+            flash(p, "danger")
+        return redirect(url_for("admin.line_steps_list"))
+    # 新規の友だちに割り当てるのは1セットだけ（既に配信中の友だちは元のセットで最後まで進む）。
+    LineStepSet.query.filter(LineStepSet.client_id == step_set.client_id,
+                             LineStepSet.id != step_set.id).update({"is_active": False})
+    step_set.is_active = True
+    step_set.approved_at = datetime.utcnow()
+    step_set.approved_by_user_id = current_user.id
+    db.session.commit()
+    if not line_service.get_credentials(step_set.client_id):
+        flash("承認しました。ただしLINE接続設定が未完了のため、まだ配信されません。", "warning")
+    else:
+        flash(f"「{step_set.title}」を承認し、稼働を開始しました。", "success")
+    return redirect(url_for("admin.line_steps_list"))
+
+
+@bp.route("/line-steps/<int:set_id>/stop", methods=["POST"])
+def line_steps_stop(set_id):
+    step_set = _own_step_set(set_id)
+    step_set.is_active = False
+    db.session.commit()
+    flash(f"「{step_set.title}」の配信を停止しました（友だちの進捗は保持されます）。", "success")
+    return redirect(url_for("admin.line_steps_list"))
+
+
+@bp.route("/line-steps/<int:set_id>/test/<int:idx>", methods=["POST"])
+def line_steps_test(set_id, idx):
+    """テスト送信: 接続設定のテスト送信先（オーナー本人の userId）だけに1通送る。配信ログには残さない。"""
+    from datetime import date as _date
+    from ..services import line_service
+
+    step_set = _own_step_set(set_id)
+    creds = line_service.get_credentials(step_set.client_id)
+    if not creds or not creds.get("test_user_id"):
+        flash("テスト送信先が未設定です。友だち一覧で自分のアカウントを「テスト送信先にする」を押してください。", "warning")
+        return redirect(url_for("admin.line_steps_list"))
+    steps = line_service.normalized_steps(step_set)
+    if not 0 <= idx < len(steps):
+        abort(404)
+    me = LineFriend.query.filter_by(client_id=step_set.client_id, line_user_id=creds["test_user_id"]).first()
+    sample = LineFriend(display_name=(me.display_name if me else "") or "テスト", started_on=_date.today())
+    text = "【テスト送信】\n" + line_service.render_text(steps[idx]["message"], sample, creds,
+                                                         Client.query.get(step_set.client_id).name)
+    try:
+        line_service.push(creds["access_token"], creds["test_user_id"],
+                          line_service.build_messages(steps[idx], text))
+    except Exception as e:
+        flash(f"テスト送信に失敗しました: {e}", "danger")
+        return redirect(url_for("admin.line_steps_list"))
+    flash(f"STEP{idx + 1} をテスト送信しました。", "success")
+    return redirect(url_for("admin.line_steps_list"))
+
+
+@bp.route("/line-friends")
+def line_friends():
+    from ..services import line_service
+
+    client_id = _client_id()
+    friends = LineFriend.query.filter_by(client_id=client_id).order_by(LineFriend.followed_at.desc()).all()
+    creds = line_service.get_credentials(client_id) or {}
+    counts = {}
+    for f in friends:
+        counts[f.status] = counts.get(f.status, 0) + 1
+    totals = {
+        "all": len(friends),
+        "active": counts.get(LINE_FRIEND_ACTIVE, 0),
+        "done": counts.get(LINE_FRIEND_DONE, 0),
+        "blocked": counts.get(LINE_FRIEND_BLOCKED, 0),
+        "converted": counts.get(LINE_FRIEND_CONVERTED, 0),
+    }
+    return render_template("admin/line_friends.html", friends=friends, totals=totals,
+                           test_user_id=creds.get("test_user_id", ""),
+                           deadline_text=line_service.deadline_text, to_jst=line_service.to_jst)
+
+
+@bp.route("/line-friends/<int:friend_id>/set-test", methods=["POST"])
+def line_friends_set_test(friend_id):
+    from ..models import SnsConnection
+
+    friend = LineFriend.query.get_or_404(friend_id)
+    if friend.client_id != _client_id():
+        abort(403)
+    conn = SnsConnection.query.filter_by(client_id=friend.client_id, platform="line").first_or_404()
+    creds = dict(conn.credentials_json or {})
+    creds["test_user_id"] = friend.line_user_id
+    conn.credentials_json = creds
+    db.session.commit()
+    flash(f"{friend.display_name or 'この友だち'} をテスト送信先にしました。", "success")
+    return redirect(url_for("admin.line_friends"))
 
 
 # ──────────────────────────────────────────────

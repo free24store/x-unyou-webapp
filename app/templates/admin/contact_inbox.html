@@ -2,8 +2,8 @@
 {% block title %}お問い合わせ受信ボックス — YB BOOST{% endblock %}
 {% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
 {% block content %}
-{% set src_labels = {'lp': 'LP', 'sales_letter': 'セールスレター', 'cta': 'CTA', 'direct': '直接'} %}
-{% set src_badge = {'lp': 'bg-primary', 'sales_letter': 'bg-info', 'cta': 'bg-success', 'direct': 'bg-secondary'} %}
+{% set src_labels = {'lp': 'LP', 'sales_letter': 'セールスレター', 'cta': 'CTA', 'direct': '直接', 'line': 'LINE'} %}
+{% set src_badge = {'lp': 'bg-primary', 'sales_letter': 'bg-info', 'cta': 'bg-success', 'direct': 'bg-secondary', 'line': 'bg-success'} %}
 <h2 class="h4 mb-3">📬 お問い合わせ受信ボックス
   {% if unread > 0 %}
   <span class="badge bg-danger ms-2">{{ unread }}</span>

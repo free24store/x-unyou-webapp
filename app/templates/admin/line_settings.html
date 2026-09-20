@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}LINE接続設定 — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">⚙️ LINE接続設定</h2>
+
+<div class="card mb-4">
+  <div class="card-header"><strong>① LINE Developers で準備すること</strong></div>
+  <div class="card-body small">
+    <ol class="mb-0">
+      <li>LINE公式アカウントで <strong>Messaging API を有効化</strong>し、LINE Developers のチャネルを開く</li>
+      <li>「チャネル基本設定」の <strong>チャネルシークレット</strong> と、「Messaging API設定」の <strong>チャネルアクセストークン（長期）</strong> を下に貼る</li>
+      <li>「Messaging API設定」の <strong>Webhook URL</strong> に下のURLを登録し、<strong>Webhookの利用をON</strong>（「検証」ボタンで成功を確認）</li>
+      <li>LINE公式アカウント管理画面で <strong>あいさつメッセージ・応答メッセージをOFF</strong>（ONのままだと挨拶と1通目が二重に届きます）</li>
+    </ol>
+  </div>
+</div>
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card mb-4">
+    <div class="card-header"><strong>② 認証情報</strong></div>
+    <div class="card-body">
+      <div class="mb-3">
+        <label class="form-label">チャネルシークレット</label>
+        <input type="password" name="channel_secret" class="form-control" value="{{ masked_secret }}" autocomplete="off"
+               placeholder="未設定">
+        <div class="form-text">伏せ字のまま保存すると変更されません。</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">チャネルアクセストークン（長期）</label>
+        <input type="password" name="access_token" class="form-control" value="{{ masked_token }}" autocomplete="off"
+               placeholder="未設定">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Webhook URL（LINE Developers に登録）</label>
+        <div class="input-group">
+          <input type="text" class="form-control" value="{{ webhook_url }}" readonly id="webhook-url">
+          <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('webhook-url').value)">📋</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header"><strong>③ 配信の設定</strong></div>
+    <div class="card-body">
+      <div class="mb-3">
+        <label class="form-label">アカウント名（本文の <code>{AccountName}</code> に入ります）</label>
+        <input type="text" name="account_name" class="form-control" value="{{ creds.get('account_name', '') }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">申込の合図になる言葉</label>
+        <input type="text" name="consult_keyword" class="form-control" value="{{ creds.get('consult_keyword', '') }}"
+               placeholder="{{ default_keyword }}">
+        <div class="form-text">友だちがこの言葉を含むメッセージを送ると、お問い合わせ箱に入ってメール通知され、以降のステップは止まります。空欄なら「{{ default_keyword }}」。</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">申込への自動返信（任意）</label>
+        <textarea name="consult_reply" class="form-control" rows="4"
+                  placeholder="{Nickname}さん、ありがとうございます！&#10;日程調整のご案内を担当からお送りします。少々お待ちください。">{{ creds.get('consult_reply', '') }}</textarea>
+        <div class="form-text">空欄なら自動返信しません（手動で返信）。</div>
+      </div>
+      <div class="mb-0">
+        <label class="form-label">テスト送信先（LINE userId）</label>
+        <input type="text" name="test_user_id" class="form-control" value="{{ creds.get('test_user_id', '') }}"
+               placeholder="自分で友だち追加 → LINE友だち画面の「テスト送信先にする」で自動入力">
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary mb-4">保存</button>
+</form>
+
+<div class="card mb-4">
+  <div class="card-header"><strong>④ 定時配信（外部cron）</strong></div>
+  <div class="card-body small">
+    <p>無料プランはアクセスが無いとスリープし、その間は配信が止まります。
+      <strong>cron-job.org</strong> に下のURLを登録し、配信時刻に叩かせてください。</p>
+    <div class="mb-2">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text">URL</span>
+        <input type="text" class="form-control" value="{{ cron_url }}" readonly id="cron-url">
+        <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('cron-url').value)">📋</button>
+      </div>
+    </div>
+    <ul>
+      <li>リクエストヘッダー <code>X-Cron-Secret</code> に、サーバーの環境変数 <code>LINE_CRON_SECRET</code> と同じ値を設定
+        {% if cron_secret_set %}<span class="badge bg-success">サーバー側 設定済み</span>{% else %}<span class="badge bg-danger">サーバー側 未設定</span>{% endif %}</li>
+      <li>タイムゾーン: <strong>Asia/Tokyo</strong></li>
+      <li>実行時刻:
+        {% if cron_times %}
+        {% for t in cron_times %}<span class="badge bg-light text-dark border me-1">{{ t }}</span>{% endfor %}
+        <div class="text-muted">稼働中のステップの送信時刻と、その15分後の再試行枠です。</div>
+        {% else %}<span class="text-muted">稼働中のステップがありません</span>{% endif %}
+      </li>
+    </ul>
+    <div class="text-muted mb-0">送信時刻だけに絞るのは、無料のデータベース（Neon）の月間稼働時間を使い切らないためです。5分おき等の常時実行にはしないでください。</div>
+  </div>
+</div>
+{% endblock %}

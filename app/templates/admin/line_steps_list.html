@@ -4,20 +4,55 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="h4 mb-0">📱 LINEステップ配信管理</h2>
-  <a href="{{ url_for('admin.line_steps_new') }}" class="btn btn-primary">➕ 新しいステップを生成</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('admin.line_settings') }}" class="btn btn-outline-secondary">⚙️ LINE接続設定</a>
+    <a href="{{ url_for('admin.line_steps_new') }}" class="btn btn-primary">➕ 新しいステップを生成</a>
+  </div>
 </div>
 
-<div class="alert alert-info">
-  💡 <strong>Point:</strong> 7日間のLINEステップ配信で見込み客を教育し、セールスレターに誘導します。生成したメッセージをLINE Official Account Managerにコピー&ペーストして設定してください。
+{% if not connected %}
+<div class="alert alert-warning">
+  ⚠️ LINE公式アカウントと未接続です。今はコピー＆ペースト運用のみ使えます。
+  自動配信するには <a href="{{ url_for('admin.line_settings') }}">LINE接続設定</a> を完了してください。
 </div>
+{% else %}
+<div class="alert alert-info">
+  💡 <strong>Point:</strong> 「承認して稼働」したセットだけが、新しく友だち追加した人に自動配信されます。
+  文面を編集すると承認は取り消されます（未確認の文面は送られません）。
+</div>
+{% endif %}
 
 {% if step_sets %}
 {% for step_set in step_sets %}
-<div class="card mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <strong>📱 {{ step_set.title }}</strong>
+{% set st = stats.get(step_set.id, {}) %}
+<div class="card mb-4 {% if step_set.is_live %}border-success{% endif %}">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
-      <span class="text-muted small me-3">{{ step_set.created_at.strftime('%Y/%m/%d') }}</span>
+      <strong>📱 {{ step_set.title }}</strong>
+      {% if step_set.is_live %}
+      <span class="badge bg-success ms-2">配信中</span>
+      {% elif step_set.approved_at %}
+      <span class="badge bg-secondary ms-2">停止中</span>
+      {% else %}
+      <span class="badge bg-warning text-dark ms-2">未承認</span>
+      {% endif %}
+      <span class="text-muted small ms-2">{{ step_set.created_at.strftime('%Y/%m/%d') }}</span>
+    </div>
+    <div class="d-flex gap-1 flex-wrap">
+      <a href="{{ url_for('admin.line_steps_edit', set_id=step_set.id) }}" class="btn btn-sm btn-outline-primary">✏️ 編集</a>
+      {% if step_set.is_live %}
+      <form method="POST" action="{{ url_for('admin.line_steps_stop', set_id=step_set.id) }}" class="d-inline"
+            onsubmit="return confirm('配信を停止しますか？（友だちの進捗は保持されます）')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">⏸ 停止</button>
+      </form>
+      {% else %}
+      <form method="POST" action="{{ url_for('admin.line_steps_approve', set_id=step_set.id) }}" class="d-inline"
+            onsubmit="return confirm('全ステップの内容を確認しましたか？承認すると、新しく友だち追加した人に自動配信されます。')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-success">✅ 承認して稼働</button>
+      </form>
+      {% endif %}
       <form method="POST" action="{{ url_for('admin.line_steps_delete', set_id=step_set.id) }}" class="d-inline"
             onsubmit="return confirm('このステップセットを削除しますか？')">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -26,12 +61,29 @@
     </div>
   </div>
   <div class="card-body">
-    {% for step in step_set.steps_json %}
+    {% for step in steps_of(step_set) %}
+    {% set i = loop.index0 %}
     <div class="mb-3 p-3 border rounded bg-light">
-      <div class="d-flex justify-content-between align-items-start mb-2">
-        <span class="badge bg-success">STEP{{ loop.index }} — {{ step.timing }}</span>
-        <button class="btn btn-sm btn-outline-secondary"
-                onclick="copyStep('step-{{ step_set.id }}-{{ loop.index }}')">📋 コピー</button>
+      <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+        <div>
+          <span class="badge bg-success">STEP{{ loop.index }}</span>
+          <span class="badge bg-light text-dark border">Day{{ step.day }} ・ {{ step.send_at }}</span>
+          {% if step.video_url %}<span class="badge bg-info text-dark">🎬 動画あり</span>{% endif %}
+          {% if step.quick_replies %}<span class="badge bg-light text-dark border">ボタン{{ step.quick_replies|length }}個</span>{% endif %}
+          {% if st.get(i) %}
+          <span class="small text-muted ms-2">送信 {{ st[i].sent }}{% if st[i].failed %} ／ <span class="text-danger">失敗 {{ st[i].failed }}</span>{% endif %}</span>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-1">
+          {% if connected and has_test_user %}
+          <form method="POST" action="{{ url_for('admin.line_steps_test', set_id=step_set.id, idx=i) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-success">📨 自分にテスト送信</button>
+          </form>
+          {% endif %}
+          <button class="btn btn-sm btn-outline-secondary"
+                  onclick="copyStep('step-{{ step_set.id }}-{{ loop.index }}')">📋 コピー</button>
+        </div>
       </div>
       <pre id="step-{{ step_set.id }}-{{ loop.index }}" class="mb-0 small" style="white-space:pre-wrap;font-family:inherit">{{ step.message }}</pre>
     </div>
