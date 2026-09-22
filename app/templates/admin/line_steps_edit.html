@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}LINEステップ編集 — YB BOOST{% endblock %}
+{% block sidebar %}{% include "partials/_sidebar_admin.html" %}{% endblock %}
+{% block content %}
+<h2 class="h4 mb-3">✏️ LINEステップ編集</h2>
+
+<div class="alert alert-info small">
+  <div>・<strong>Day</strong> は登録日を0とした日数。<strong>送信時刻</strong> は「即時」か HH:MM（日本時間）。19:30以降に登録した人は翌日がDay0になります。</div>
+  <div>・本文で使える差し込み: <code>{Nickname}</code>（LINEの表示名） <code>{AccountName}</code> <code>{deadline}</code>（その人の締切＝Day6の23:59）</div>
+  <div>・ボタンは1行に1個。<code>ラベル|tag:A</code>（押した人にタグ）／<code>ラベル|text:相談希望</code>（その言葉を送信）／<code>ラベル</code>のみ</div>
+  <div>・保存すると承認は取り消されます。内容を確認してから一覧で「承認して稼働」を押してください。</div>
+</div>
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="count" value="{{ steps|length }}">
+  <div class="mb-3">
+    <label class="form-label">タイトル</label>
+    <input type="text" name="title" class="form-control" value="{{ step_set.title }}">
+  </div>
+
+  {% for step in steps %}
+  {% set i = loop.index0 %}
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>STEP{{ loop.index }}</strong>
+      <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" name="delete_{{ i }}" id="delete_{{ i }}">
+        <label class="form-check-label small text-danger" for="delete_{{ i }}">このステップを削除</label>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row g-2 mb-2">
+        <div class="col-4 col-md-2">
+          <label class="form-label small mb-0">Day</label>
+          <input type="number" min="0" name="day_{{ i }}" class="form-control form-control-sm" value="{{ step.day }}">
+        </div>
+        <div class="col-8 col-md-3">
+          <label class="form-label small mb-0">送信時刻</label>
+          <input type="text" name="send_at_{{ i }}" class="form-control form-control-sm" value="{{ step.send_at }}" placeholder="20:30 / 即時">
+        </div>
+        <div class="col-12 col-md-7">
+          <label class="form-label small mb-0">メモ（任意・配信されません）</label>
+          <input type="text" name="timing_{{ i }}" class="form-control form-control-sm" value="{{ step.timing }}">
+        </div>
+      </div>
+      <label class="form-label small mb-0">本文</label>
+      <textarea name="message_{{ i }}" class="form-control mb-2" rows="8">{{ step.message }}</textarea>
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          <label class="form-label small mb-0">動画URL（mp4・https・任意）</label>
+          <input type="text" name="video_url_{{ i }}" class="form-control form-control-sm" value="{{ step.video_url }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small mb-0">サムネイルURL（jpg/png・https・動画を付けるなら必須）</label>
+          <input type="text" name="preview_url_{{ i }}" class="form-control form-control-sm" value="{{ step.preview_url }}">
+        </div>
+      </div>
+      <label class="form-label small mb-0">ボタン（任意）</label>
+      <textarea name="quick_replies_{{ i }}" class="form-control form-control-sm" rows="2"
+                placeholder="A 売る物が決まらない|tag:A&#10;B 判断が止まる|tag:B">{{ fmt_qr(step.quick_replies) }}</textarea>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="d-flex gap-2 mb-5">
+    <button type="submit" name="add_step" value="1" class="btn btn-outline-secondary">➕ ステップを追加</button>
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="{{ url_for('admin.line_steps_list') }}" class="btn btn-link">キャンセル</a>
+  </div>
+</form>
+{% endblock %}

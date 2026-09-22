@@ -187,6 +187,64 @@ class LineStepSet(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    # E5-3: Messaging API 実配信の承認ゲート。承認済み かつ 稼働中 のセットだけが配信される。
+    # 文面を編集したら承認は取り消される（未承認の文面は絶対に送らない）。
+    is_active = db.Column(db.Boolean, default=False)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    approved_by_user_id = db.Column(db.Integer, nullable=True)
+
+    @property
+    def is_live(self):
+        return bool(self.is_active and self.approved_at)
+
+
+# E5-3: LINE友だち（Webhook の follow で作成）と配信ログ。
+LINE_FRIEND_ACTIVE = "active"        # 配信対象
+LINE_FRIEND_BLOCKED = "blocked"      # ブロック（unfollow）。以降は送らない
+LINE_FRIEND_CONVERTED = "converted"  # 「相談希望」送信済み。以降のステップは送らない
+LINE_FRIEND_DONE = "done"            # 全ステップ送信済み
+
+
+class LineFriend(db.Model):
+    __tablename__ = "line_friend"
+    __table_args__ = (db.UniqueConstraint("client_id", "line_user_id"),)
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("client.id"), nullable=False, index=True)
+    line_user_id = db.Column(db.String(64), nullable=False)
+    display_name = db.Column(db.String(200), default="")
+    status = db.Column(db.String(20), default=LINE_FRIEND_ACTIVE, index=True)
+    tags = db.Column(db.JSON, nullable=False, default=list)
+    step_set_id = db.Column(db.Integer, db.ForeignKey("line_step_set.id"), nullable=True)
+    started_on = db.Column(db.Date, nullable=True)   # Day0 の日付（JST）。19:30以降の登録は翌日
+    next_step_index = db.Column(db.Integer, default=0)
+    last_sent_at = db.Column(db.DateTime, nullable=True)
+    followed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    blocked_at = db.Column(db.DateTime, nullable=True)
+    consult_requested_at = db.Column(db.DateTime, nullable=True)
+    step_set = db.relationship("LineStepSet")
+
+
+LINE_DELIVERY_SENDING = "sending"
+LINE_DELIVERY_SENT = "sent"
+LINE_DELIVERY_FAILED = "failed"      # 再試行対象（上限まで）
+LINE_DELIVERY_GAVE_UP = "gave_up"    # 上限到達。この通は飛ばして次へ進む
+
+
+class LineDelivery(db.Model):
+    """1友だち×1ステップ＝1行。unique 制約で同じ通の二重送信を構造的に防ぐ。"""
+    __tablename__ = "line_delivery"
+    __table_args__ = (db.UniqueConstraint("friend_id", "step_index"),)
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("client.id"), nullable=False, index=True)
+    friend_id = db.Column(db.Integer, db.ForeignKey("line_friend.id"), nullable=False, index=True)
+    step_set_id = db.Column(db.Integer, nullable=True)
+    step_index = db.Column(db.Integer, nullable=False)
+    via = db.Column(db.String(10), default="push")  # reply（無料枠を消費しない）/ push
+    status = db.Column(db.String(20), default=LINE_DELIVERY_SENDING)
+    attempts = db.Column(db.Integer, default=0)
+    error = db.Column(db.String(500), default="")
+    sent_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ContactMessage(db.Model):
